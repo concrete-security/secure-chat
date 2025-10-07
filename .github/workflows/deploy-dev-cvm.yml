@@ -52,14 +52,34 @@ jobs:
           PHALA_APP_ID: ${{ secrets.PHALA_DEV_APP_ID }}
         run: |
           # Wait for deployment to complete
+          TIMEOUT=300  # 5 minutes timeout
+          INTERVAL=10  # Check every 10 seconds
+          ELAPSED=30  # Start after initial wait
+
+          echo "Waiting initially for 30 seconds before checking status..."
           sleep 30
 
-          # Check deployment status using Phala CLI (grep is due to https://github.com/Phala-Network/phala-cloud-cli/issues/61)
-          DEPLOYMENT_STATUS=$(phala cvms get -j "$PHALA_APP_ID" | grep -A 100 "{" | jq -r '.status')
+          echo "Now monitoring deployment status..."
 
-          if [ "$DEPLOYMENT_STATUS" == "running" ]; then
-            echo "✅ Deployment verified successfully!"
-          else
-            echo "❌ Deployment verification failed. Status: $DEPLOYMENT_STATUS"
-            exit 1
-          fi
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            # Check deployment status using Phala CLI (grep is due to https://github.com/Phala-Network/phala-cloud-cli/issues/61)
+            DEPLOYMENT_STATUS=$(phala cvms get -j "$PHALA_APP_ID" | grep -A 100 "{" | jq -r '.status')
+
+            echo "Current status: $DEPLOYMENT_STATUS (elapsed: ${ELAPSED}s)"
+
+            if [ "$DEPLOYMENT_STATUS" == "running" ]; then
+              echo "✅ Deployment verified successfully!"
+              exit 0
+            elif [ "$DEPLOYMENT_STATUS" != "starting" ]; then
+              echo "❌ Deployment failed with unexpected status: $DEPLOYMENT_STATUS"
+              exit 1
+            fi
+
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+            echo "⏱️  Waited ${ELAPSED}s so far..."
+          done
+
+          # If we reach here, timeout occurred
+          echo "❌ Deployment verification timed out after ${TIMEOUT}s. Final status: $DEPLOYMENT_STATUS"
+          exit 1
