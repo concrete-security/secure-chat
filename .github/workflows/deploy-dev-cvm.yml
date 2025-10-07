@@ -1,0 +1,65 @@
+name: Deploy to Development CVM
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "cvm/docker-compose.yml"
+  # for manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  update-dev-cvm:
+    name: Update Development CVM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install Phala CLI
+        run: npm install -g @phala/cli
+
+      - name: Deploy to Phala Cloud CVM
+        env:
+          PHALA_API_TOKEN: ${{ secrets.PHALA_API_TOKEN }}
+          PHALA_APP_ID: ${{ secrets.PHALA_DEV_APP_ID }}
+        run: |
+          # Check if docker-compose.yml exists in the cvm directory
+          if [ ! -f "cvm/docker-compose.yml" ]; then
+            echo "Error: docker-compose.yml not found in cvm directory"
+            exit 1
+          fi
+
+          echo "Preparing deployment to Phala Cloud CVM..."
+
+          # Authenticate
+          phala auth login "$PHALA_API_TOKEN"
+
+          # Update Dev CVM
+          phala cvms upgrade --compose cvm/docker-compose.yml "$PHALA_APP_ID"
+
+          echo "Deployment completed successfully!"
+
+      - name: Verify Deployment
+        env:
+          PHALA_APP_ID: ${{ secrets.PHALA_DEV_APP_ID }}
+        run: |
+          # Wait for deployment to complete
+          sleep 30
+
+          # Check deployment status using Phala CLI (grep is due to https://github.com/Phala-Network/phala-cloud-cli/issues/61)
+          DEPLOYMENT_STATUS=$(phala cvms get -j "$PHALA_APP_ID" | grep -A 100 "{" | jq -r '.status')
+
+          if [ "$DEPLOYMENT_STATUS" == "running" ]; then
+            echo "✅ Deployment verified successfully!"
+          else
+            echo "❌ Deployment verification failed. Status: $DEPLOYMENT_STATUS"
+            exit 1
+          fi
