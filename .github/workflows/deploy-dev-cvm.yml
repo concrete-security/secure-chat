@@ -16,15 +16,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@8f152de45cc393bb48ce5d89d36b731f54556e65
         with:
           node-version: "18"
 
       - name: Install Phala CLI
-        run: npm install -g @phala/cli
+        run: npm install -g phala
 
       - name: Deploy to Phala Cloud CVM
         env:
