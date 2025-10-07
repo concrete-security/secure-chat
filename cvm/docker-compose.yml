@@ -1,8 +1,18 @@
 services:
-  app:
-    image: leechael/phala-cloud-nextjs-starter:latest
-    container_name: app
-    ports:
-      - "3000:3000"
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
-      - /var/run/tappd.sock:/var/run/tappd.sock
+      - huggingface-cache:/root/.cache/huggingface
+    runtime: nvidia
+    ports:
+      - "8000:8000"
+    ipc: host
+    command: --model openai/gpt-oss-120b --max-model-len 4096
+    restart: unless-stopped
+
+volumes:
+  # used to store huggingface models
+  huggingface-cache:
