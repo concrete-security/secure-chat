@@ -15,7 +15,7 @@ services:
       --tensor-parallel-size 1
       --gpu-memory-utilization 0.95
       --max-model-len 131072
-      --max-num-seqs 4
+      --max-num-seqs 8
       --reasoning-parser openai_gptoss
       --async-scheduling
       --no-enable-prefix-caching
