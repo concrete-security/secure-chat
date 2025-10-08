@@ -10,7 +10,23 @@ services:
     ports:
       - "8000:8000"
     ipc: host
-    command: --model openai/gpt-oss-120b --max-model-len 4096
+    command: 
+      - --model
+      - openai/gpt-oss-120b
+      - --tensor-parallel-size
+      - "1"
+      - --gpu-memory-utilization
+      - "0.95"
+      - --max-model-len
+      - "131072"
+      - --max-num-seqs
+      - "4"
+      - --reasoning-parser
+      - openai_gptoss
+      - --async-scheduling
+      - --no-enable-prefix-caching
+      - --cuda-graph-sizes
+      - "2048"
     restart: unless-stopped
 
 volumes:
