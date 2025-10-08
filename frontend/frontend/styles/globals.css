@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light Mode: Clean, crisp, and professional */
+    --background: 0 0% 100%;
+    --foreground: 220 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 20% 12%;
+    /* Brand: A strong, trustworthy blue */
+    --primary: 210 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    /* Subtle tinted surfaces */
+    --secondary: 220 30% 96%;
+    --secondary-foreground: 220 20% 25%;
+    --muted: 220 30% 96%;
+    --muted-foreground: 220 15% 45%;
+    --accent: 220 30% 96%;
+    --accent-foreground: 220 20% 25%;
+    /* Feedback colors */
+    --destructive: 0 84% 62%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 140 70% 40%;
+    --success-foreground: 0 0% 100%;
+    /* UI chrome */
+    --border: 220 20% 90%;
+    --input: 220 20% 90%;
+    --ring: 210 100% 50%;
+    /* Sharper, more modern radius */
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Dark Mode: Deep, secure, and focused */
+    --background: 220 30% 8%;
+    --foreground: 220 15% 95%;
+    --card: 220 30% 12%;
+    --card-foreground: 220 15% 95%;
+    --popover: 220 30% 8%;
+    --popover-foreground: 220 15% 95%;
+    /* Brand: A vibrant, electric blue for high visibility */
+    --primary: 190 100% 55%;
+    --primary-foreground: 220 30% 5%;
+    /* Subtle tinted surfaces */
+    --secondary: 220 30% 15%;
+    --secondary-foreground: 220 15% 95%;
+    --muted: 220 30% 15%;
+    --muted-foreground: 220 10% 65%;
+    --accent: 220 30% 15%;
+    --accent-foreground: 220 15% 95%;
+    /* Feedback colors */
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --success: 140 65% 50%;
+    --success-foreground: 0 0% 10%;
+    /* UI chrome */
+    --border: 220 30% 20%;
+    --input: 220 30% 20%;
+    --ring: 190 100% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Telegraf', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji';
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+.animate-in {
+  animation: animate-in 0.5s ease-out;
+}
+
+@keyframes animate-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer components {
+  .markdown-body {
+    @apply space-y-2 break-words;
+  }
+
+  .markdown-body p {
+    @apply m-0 text-[0.95rem] leading-6;
+  }
+
+  .markdown-body a {
+    @apply text-primary underline decoration-dashed decoration-primary/40 hover:decoration-primary;
+  }
+
+  .markdown-body ul {
+    @apply list-disc pl-4 space-y-1;
+  }
+
+  .markdown-body ol {
+    @apply list-decimal pl-5 space-y-1;
+  }
+
+  .markdown-body code {
+    @apply rounded bg-muted px-1.5 py-0.5 text-xs font-mono;
+  }
+
+  .markdown-body pre {
+    @apply m-0 bg-muted/60 px-3 py-2 text-xs font-mono leading-5 rounded-md overflow-x-auto;
+  }
+
+  .markdown-body h1,
+  .markdown-body h2,
+  .markdown-body h3,
+  .markdown-body h4,
+  .markdown-body h5,
+  .markdown-body h6 {
+    @apply m-0 font-semibold;
+  }
+
+  .markdown-table-wrapper {
+    @apply overflow-x-auto;
+  }
+
+  .markdown-table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .markdown-table thead {
+    @apply bg-muted/40;
+  }
+
+  .markdown-table th,
+  .markdown-table td {
+    @apply border border-border px-3 py-2 align-top;
+  }
+
+  .markdown-table .align-left {
+    @apply text-left;
+  }
+
+  .markdown-table .align-center {
+    @apply text-center;
+  }
+
+  .markdown-table .align-right {
+    @apply text-right;
+  }
+}
