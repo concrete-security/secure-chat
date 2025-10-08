@@ -18,7 +18,6 @@ services:
       --max-num-seqs 8
       --reasoning-parser openai_gptoss
       --async-scheduling
-      --cuda-graph-sizes 2048
     restart: unless-stopped
 
 volumes:
