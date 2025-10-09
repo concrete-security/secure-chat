@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 
 const STORAGE_FLAG = "chunk-recovery:reloaded"
 
@@ -12,6 +13,12 @@ function shouldHandle(error: unknown): boolean {
 }
 
 export function ChunkRecovery() {
+  const router = useRouter()
+
+  useEffect(() => {
+    router.prefetch?.("/confidential-ai")
+  }, [router])
+
   useEffect(() => {
     const triggerReload = () => {
       if (typeof window === "undefined") return

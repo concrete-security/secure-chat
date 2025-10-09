@@ -52,13 +52,10 @@ Continue building your app on:
 
 ## Configuration
 
-Copy the example environment file and adjust it for your deployment:
+Copy the example environment file and adjust optional client defaults:
 
-- `cp .env.local.example .env.local`
-- Verify the `VLLM_BASE_URL`/`NEXT_PUBLIC_VLLM_BASE_URL` values point to your vLLM OpenAI-compatible endpoint. The included `http://69.19.137.239:8000/v1` target assumes the daemon is listening on port 8000; update the URL if your deployment exposes a different port or protocol.
-- Keep the `VLLM_API_KEY` secret. The provided `token-` value is required for the remote image shared above – replace it if you rotate credentials.
-- Run `curl -H "Authorization: Bearer token-" http://69.19.137.239:8000/v1/models` (or the equivalent for your URL) to discover the available model id and update `VLLM_MODEL`/`NEXT_PUBLIC_VLLM_MODEL` accordingly.
-- Update the base system prompt in `lib/system-prompt.ts` if you need a different Umbra persona. You can still override it per deployment with the `DEFAULT_SYSTEM_PROMPT` environment variable.
-- Umbra now allows you to pick a reasoning intensity (low/medium/high) in the chat UI; the selection is forwarded via `reasoning_effort` to the vLLM OpenAI-compatible endpoint, so ensure your backend model accepts the corresponding parameter.
-
-The Next.js API route reads the server-side variables (`VLLM_*`, `DEFAULT_*`) while the UI surfaces connection details using the public `NEXT_PUBLIC_VLLM_*` keys.
+- `cp .env_example .env.local`
+- Only `NEXT_PUBLIC_*` variables are consumed. They are embedded in the bundle, so leave them empty if you plan to supply details from the browser UI.
+- Provide the vLLM base URL, model id, and bearer token from the **Provider settings** card inside the Confidential AI page. The token stays in the browser (session storage) and is never sent through a Next.js API route.
+- Use `curl -H "Authorization: Bearer <your-token>" https://your-tee-host/v1/models` to inspect available model ids before populating the UI defaults.
+- Update the base system prompt in `lib/system-prompt.ts` or via `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT` if you need a different Umbra persona. The Reasoning intensity selector in the chat forwards `reasoning_effort` to the vLLM endpoint.

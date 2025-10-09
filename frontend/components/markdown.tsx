@@ -26,6 +26,12 @@ function sanitizeUrl(rawUrl: string) {
 function renderInlineSegment(text: string): string {
   let escaped = escapeHtml(text)
 
+  const brPlaceholders: string[] = []
+  escaped = escaped.replace(/&lt;br\s*\/?&gt;/gi, () => {
+    brPlaceholders.push("<br />")
+    return `%%BR${brPlaceholders.length - 1}%%`
+  })
+
   const codePlaceholders: string[] = []
   escaped = escaped.replace(/`([^`]+)`/g, (_, inner) => {
     codePlaceholders.push(`<code>${escapeHtml(inner)}</code>`)
@@ -52,6 +58,7 @@ function renderInlineSegment(text: string): string {
 
   escaped = escaped.replace(/%%CODE(\d+)%%/g, (_, idx) => codePlaceholders[Number(idx)] ?? "")
   escaped = escaped.replace(/%%LINK(\d+)%%/g, (_, idx) => linkPlaceholders[Number(idx)] ?? "")
+  escaped = escaped.replace(/%%BR(\d+)%%/g, (_, idx) => brPlaceholders[Number(idx)] ?? "")
 
   return escaped
 }
@@ -62,6 +69,7 @@ function markdownToHtml(markdown: string) {
   let inUl = false
   let inOl = false
   let inCodeBlock = false
+  let codeFenceLanguage = ""
   const codeLines: string[] = []
   const paragraphLines: string[] = []
 
@@ -86,7 +94,8 @@ function markdownToHtml(markdown: string) {
 
   const flushCodeBlock = () => {
     if (!inCodeBlock) return
-    html += `<pre class="rounded-md bg-muted/70 px-3 py-2 text-xs leading-5 overflow-x-auto"><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`
+    const languageClass = codeFenceLanguage ? ` class="language-${escapeHtml(codeFenceLanguage)}"` : ""
+    html += `<pre class="rounded-md bg-muted/70 px-3 py-2 text-xs leading-5 overflow-x-auto"><code${languageClass}>${escapeHtml(codeLines.join("\n"))}</code></pre>`
     codeLines.length = 0
     inCodeBlock = false
     codeFenceLanguage = ""
@@ -134,9 +143,10 @@ function markdownToHtml(markdown: string) {
       flushParagraph()
       closeLists()
       inCodeBlock = true
-    
-    continue
-  }
+      const fenceMatch = line.trim().match(/^```(\S+)?/)
+      codeFenceLanguage = fenceMatch?.[1] ?? ""
+      continue
+    }
 
     if (line.trim() === "") {
       flushParagraph()
