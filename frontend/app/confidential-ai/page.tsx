@@ -5,7 +5,7 @@ import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCall
 import Link from "next/link"
 import Image from "next/image"
 import { useTheme } from "next-themes"
-import { ArrowDown, Send, Lock, Shield, ShieldCheck, Cpu, CheckCircle2, Bot, Globe, Paperclip, FileText, X, Sparkles, ChevronDown, Key } from "lucide-react"
+import { ArrowDown, Send, Lock, Shield, ShieldCheck, Cpu, CheckCircle2, Bot, Globe, Paperclip, FileText, X, Sparkles, ChevronDown, Key, Sun, Moon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -86,11 +86,6 @@ function truncateMiddle(str: string, maxLength: number = 40): string {
   const backChars = Math.floor(charsToShow / 2)
   return str.slice(0, frontChars) + ellipsis + str.slice(-backChars)
 }
-
-const THEME_OPTIONS = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-] as const
 
 export default function ConfidentialAIPage() {
   const envProviderApiBase = normalize(confidentialChatConfig.providerApiBase)
@@ -247,6 +242,9 @@ export default function ConfidentialAIPage() {
   }, [])
 
   const activeTheme = (currentTheme === "system" ? resolvedTheme : currentTheme) ?? "light"
+  const handleThemeToggle = () => {
+    setTheme(activeTheme === "dark" ? "light" : "dark")
+  }
   const isStreaming = useMemo(() => messages.some((message) => message.streaming), [messages])
 
 
@@ -594,72 +592,75 @@ export default function ConfidentialAIPage() {
   const showScrollToLatest = !isPinnedToBottom && (!autoScrollEnabled || hasNewMessages)
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden bg-muted/20">
+    <div className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#E2E2E2] text-black">
+      <div
+        className="pointer-events-none absolute left-1/2 top-[-10rem] h-[440px] w-[848px] -translate-x-1/2 rounded-[50%] border border-black/10 opacity-60"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute right-[-12%] top-[-28%] h-[320px] w-[320px] rounded-full blur-3xl"
+        style={{
+          background: "radial-gradient(circle at top, rgba(27,9,134,0.35) 0%, rgba(27,9,134,0) 70%)",
+        }}
+        aria-hidden="true"
+      />
       <script src="/pdfjs/pdf.mjs" type="module" />
-      <header className="border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0">
-        <div className="container flex h-14 items-center justify-between gap-3 px-4 md:px-6">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Lock className="size-4 text-primary" />
+      <header className="relative z-20 border-b border-black/10 bg-[#E2E2E2]/70 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 md:px-6">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.32em] text-black/60">
+            <Lock className="size-4 text-black" />
             <span>Confidential Space</span>
           </div>
           <div className="flex items-center gap-3">
             {themeReady && (
-              <div className="flex items-center gap-1 rounded-full border border-border/60 bg-background/80 p-0.5 text-xs shadow-sm">
-                {THEME_OPTIONS.map((option) => {
-                  const isActive = activeTheme === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTheme(option.value)}
-                      className={cn(
-                        "flex items-center gap-1 rounded-full px-3 py-1 capitalize transition",
-                        isActive
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleThemeToggle}
+                className="rounded-full border border-black/15 bg-white/70 text-black hover:bg-white/90"
+              >
+                {activeTheme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+                <span className="sr-only">Toggle theme</span>
+              </Button>
             )}
-            <Link href="/" className="inline-flex items-center gap-2 font-semibold">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 rounded-full border border-black/15 bg-white/70 px-3 py-1 text-sm font-semibold shadow-sm transition hover:bg-white"
+            >
               <Image src="/logo.png" alt="Concrete AI logo" width={20} height={20} className="rounded-sm" />
-              <span>Confidential AI</span>
+              <span className="tracking-tight">Concrete AI</span>
             </Link>
           </div>
         </div>
       </header>
-      <main className="flex-1 flex flex-col min-h-0">
-        <div className="container flex-1 flex flex-col min-h-0 px-4 md:px-6 py-6 lg:py-10">
-          <div className="mx-auto flex max-w-7xl flex-1 flex-col min-h-0 gap-6 lg:gap-8" aria-label="Confidential space">
-            <div className="grid gap-6 flex-1 min-h-0 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2.2fr)] xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.6fr)]">
-              <section className="relative flex flex-1 flex-col min-h-0 order-1 lg:order-2">
-                <div className="rounded-3xl bg-gradient-to-br from-primary/25 via-primary/45 to-primary/25 p-[1px] shadow-lg flex-1 flex flex-col min-h-0">
-                  <div className="flex flex-1 flex-col min-h-0 rounded-[calc(1.5rem-1px)] bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4 text-xs font-medium uppercase tracking-wide text-muted-foreground shrink-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
-                          <Lock className="size-3.5" />
-                          Secure session
-                        </span>
-                        {encrypting && cipherPreview && (
-                          <>
-                            <span className="opacity-60">•</span>
-                            <span className="rounded-full bg-muted/60 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                              Encrypting {cipherPreview}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-muted/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
-                        <Sparkles className="size-3.5 text-primary" />
-                        <span>{reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)} reasoning</span>
-                      </div>
+      <main className="relative z-10 flex flex-1 flex-col min-h-0">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col min-h-0 px-4 py-8 md:px-6 md:py-10">
+          <div className="flex flex-1 flex-col min-h-0 gap-6 md:gap-8" aria-label="Confidential space">
+            <div className="grid flex-1 min-h-0 gap-6 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2.2fr)] xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.6fr)]">
+              <section className="relative order-1 flex flex-1 flex-col min-h-0 lg:order-2">
+                <div className="relative flex flex-1 flex-col overflow-hidden rounded-[32px] border border-black/15 bg-white/80 shadow-[0_45px_90px_-65px_rgba(0,0,0,0.7)] backdrop-blur">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 px-6 py-5 text-[11px] font-semibold uppercase tracking-[0.28em] text-black/60">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-1 text-white">
+                        <Lock className="size-3.5 text-white" />
+                        Secure session
+                      </span>
+                      {encrypting && cipherPreview && (
+                        <>
+                          <span className="opacity-40">•</span>
+                          <span className="rounded-full border border-black/10 bg-white/80 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.32em] text-black/70">
+                            Encrypting {cipherPreview}
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <Card className="flex flex-1 flex-col min-h-0 rounded-b-[1.4375rem] border-0 bg-background/60 shadow-none supports-[backdrop-filter]:bg-background/50 overflow-hidden">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-black/70">
+                      <Sparkles className="size-3.5 text-black" />
+                      <span>{reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)} reasoning</span>
+                    </div>
+                  </div>
+                  <Card className="flex flex-1 flex-col min-h-0 border-0 bg-transparent shadow-none">
                       <CardContent className="flex flex-1 flex-col min-h-0 p-0">
                         <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden">
                           <div
@@ -697,14 +698,13 @@ export default function ConfidentialAIPage() {
                               const label = isUser ? "You" : assistantName
 
                               const bubbleClass = isUser
-                                ? "inline-block max-w-[65ch] whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-3 text-left text-sm leading-6 text-primary-foreground shadow"
-                                : "w-full whitespace-pre-wrap break-words border-l-2 border-primary/40 pl-6 text-left text-sm leading-7 text-foreground"
+                                ? "inline-block max-w-[65ch] whitespace-pre-wrap break-words rounded-2xl bg-black px-4 py-3 text-left text-sm leading-6 text-white shadow-[0_20px_45px_-40px_rgba(0,0,0,0.8)]"
+                                : "w-full whitespace-pre-wrap break-words rounded-2xl border border-black/10 bg-white/80 px-5 py-4 text-left text-sm leading-7 text-black/85 shadow-sm backdrop-blur"
 
-                              const reasoningContainerClass = isUser ? "max-w-[65ch]" : "w-full"
                               const truncatedNoteClass = isUser ? "max-w-[65ch]" : "w-full"
 
                               const attachmentsContainerClass = cn(
-                                "flex flex-col gap-1 text-xs text-muted-foreground",
+                                "flex flex-col gap-1 text-xs text-black/70",
                                 isUser ? "items-end" : "items-start w-full"
                               )
 
@@ -727,17 +727,17 @@ export default function ConfidentialAIPage() {
                                           onClick={showReasoningPanel ? toggleReasoningPanel : undefined}
                                           disabled={!showReasoningPanel}
                                           className={cn(
-                                            "mt-1 flex size-8 items-center justify-center rounded-full bg-muted transition-all",
-                                            showReasoningPanel && "cursor-pointer hover:bg-primary/20 hover:ring-2 hover:ring-primary/30",
-                                            isReasoningOpen && "bg-primary/20 ring-2 ring-primary/40",
-                                            !showReasoningPanel && "cursor-default"
+                                            "mt-1 flex size-8 items-center justify-center rounded-full border border-black/10 bg-white/75 text-black transition-all",
+                                            showReasoningPanel && "cursor-pointer hover:bg-black hover:text-white",
+                                            isReasoningOpen && "bg-black text-white",
+                                            !showReasoningPanel && "cursor-default opacity-50"
                                           )}
                                           title={showReasoningPanel ? (isReasoningOpen ? "Hide reasoning" : "Show reasoning") : undefined}
                                         >
-                                          <Bot className={cn("size-5", isReasoningOpen ? "text-primary" : "text-muted-foreground")} />
+                                          <Bot className={cn("size-5", isReasoningOpen ? "text-white" : "text-black/60")} />
                                           {showReasoningPanel && (
-                                            <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary">
-                                              <Sparkles className="size-2.5 text-primary-foreground" />
+                                            <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-black text-white">
+                                              <Sparkles className="size-2.5" />
                                             </div>
                                           )}
                                         </button>
@@ -751,42 +751,42 @@ export default function ConfidentialAIPage() {
                                           : "flex-1 items-start text-left"
                                       )}
                                     >
-                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                      <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-black/50">
                                         {label}
                                         {m.streaming && " · streaming"}
                                         {truncatedByLength && " · truncated"}
                                       </div>
-                                    {m.attachments && m.attachments.length > 0 && (
-                                      <div className={attachmentsContainerClass}>
-                                        {m.attachments.map((file, fileIndex) => (
-                                          <div
-                                            key={fileIndex}
-                                            className={cn(
-                                              "flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 p-2",
-                                              !isUser && "w-full"
-                                            )}
-                                          >
-                                            <FileText className="size-3 text-muted-foreground" />
-                                            <span className="font-medium">{file.name}</span>
-                                            <span>
-                                              ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                      {m.attachments && m.attachments.length > 0 && (
+                                        <div className={attachmentsContainerClass}>
+                                          {m.attachments.map((file, fileIndex) => (
+                                            <div
+                                              key={fileIndex}
+                                              className={cn(
+                                                "flex items-center gap-2 rounded-xl border border-black/10 bg-white/75 p-2",
+                                                !isUser && "w-full"
+                                              )}
+                                            >
+                                              <FileText className="size-3 text-black/60" />
+                                              <span className="font-medium text-black/80">{file.name}</span>
+                                              <span className="text-black/60">
+                                                ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     <div
                                       className={bubbleClass}
                                     >
                                       <Markdown content={bubbleText} className="markdown-body text-sm" />
                                     </div>
                                     {showReasoningPanel && isReasoningOpen && (
-                                      <div className="w-full overflow-hidden rounded-xl border border-primary/25 bg-primary/5 animate-in fade-in slide-in-from-top-2 duration-300">
-                                        <div className="flex items-center gap-2 border-b border-primary/15 px-3 py-2 text-xs font-medium text-primary">
-                                          <Sparkles className="size-3.5" />
+                                      <div className="w-full overflow-hidden rounded-2xl border border-black/10 bg-white/85 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <div className="flex items-center gap-2 border-b border-black/10 px-3 py-2 text-xs font-medium uppercase tracking-[0.2em] text-black/60">
+                                          <Sparkles className="size-3.5 text-black" />
                                           <span>{m.streaming ? "Thinking..." : "Reasoning"}</span>
                                         </div>
-                                        <div className="px-3 py-3 text-xs text-muted-foreground">
+                                        <div className="px-3 py-3 text-xs text-black/70">
                                           <Markdown
                                             content={
                                               reasoningAvailable
@@ -801,7 +801,7 @@ export default function ConfidentialAIPage() {
                                       </div>
                                     )}
                                       {truncatedByLength && (
-                                        <div className={cn("text-[11px] text-muted-foreground/80", truncatedNoteClass)}>
+                                        <div className={cn("text-[11px] text-black/60", truncatedNoteClass)}>
                                           Umbra paused because the API token limit was reached. Ask to continue for more detail.
                                         </div>
                                       )}
@@ -817,8 +817,13 @@ export default function ConfidentialAIPage() {
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={hasNewMessages ? "default" : "secondary"}
-                                className="pointer-events-auto gap-1 rounded-full px-3 py-1 text-xs shadow-md"
+                                variant="ghost"
+                                className={cn(
+                                  "pointer-events-auto gap-1 rounded-full border border-black/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm transition",
+                                  hasNewMessages
+                                    ? "bg-black text-white hover:bg-black/90"
+                                    : "bg-white/80 text-black hover:bg-white"
+                                )}
                                 onClick={() => scrollToBottom()}
                               >
                                 <ArrowDown className="size-4" />
@@ -827,9 +832,9 @@ export default function ConfidentialAIPage() {
                             </div>
                           )}
                         </div>
-                        <form onSubmit={onSubmit} className="border-t border-border/60 bg-background px-5 py-4 sm:px-6 shrink-0">
-                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span className="uppercase tracking-wide text-[11px] text-muted-foreground/80">
+                        <form onSubmit={onSubmit} className="shrink-0 border-t border-black/10 bg-white/75 px-6 py-5">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-black/55">
+                            <span>
                               Reasoning intensity
                             </span>
                             <div className="flex gap-1">
@@ -837,9 +842,14 @@ export default function ConfidentialAIPage() {
                                 <Button
                                   key={effort}
                                   type="button"
-                                  variant={reasoningEffort === effort ? "default" : "outline"}
+                                  variant="ghost"
                                   size="sm"
-                                  className="h-7 px-3 text-[11px] uppercase"
+                                  className={cn(
+                                    "h-8 rounded-full border px-4 text-[11px] uppercase tracking-[0.24em]",
+                                    reasoningEffort === effort
+                                      ? "border-black bg-black text-white hover:bg-black/90"
+                                      : "border-black/20 bg-transparent text-black/60 hover:bg-black/10"
+                                  )}
                                   onClick={() => setReasoningEffort(effort as "low" | "medium" | "high")}
                                   disabled={isSending}
                                 >
@@ -853,12 +863,12 @@ export default function ConfidentialAIPage() {
                               {uploadedFiles.map((file, index) => (
                                 <div
                                   key={index}
-                                  className="flex items-center justify-between rounded-md border bg-muted/30 p-2 text-xs"
+                                  className="flex items-center justify-between rounded-xl border border-black/10 bg-white/75 p-3 text-xs text-black/70"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <FileText className="size-3 text-muted-foreground" />
-                                    <span className="font-medium">{file.name}</span>
-                                    <span className="text-muted-foreground">
+                                    <FileText className="size-3 text-black/60" />
+                                    <span className="font-medium text-black/80">{file.name}</span>
+                                    <span className="text-black/60">
                                       ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
                                     </span>
                                   </div>
@@ -867,7 +877,7 @@ export default function ConfidentialAIPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removeFile(index)}
-                                    className="h-6 w-6 p-0 hover:bg-destructive/10"
+                                    className="h-6 w-6 rounded-full border border-black/10 p-0 text-black hover:bg-black/10"
                                   >
                                     <X className="size-3" />
                                   </Button>
@@ -890,7 +900,7 @@ export default function ConfidentialAIPage() {
                                 onKeyDown={onKeyDown}
                                 disabled={isSending}
                                 placeholder="Shift+Enter for a newline. Messages and attachments stay encrypted end-to-end."
-                                className="h-[60px] w-full resize-none rounded-2xl border bg-background px-4 py-3.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="h-[60px] w-full resize-none rounded-2xl border border-black/10 bg-white/80 px-4 py-3.5 text-sm text-black placeholder:text-black/40 shadow-sm focus:outline-none focus:ring-2 focus:ring-black/60"
                                 rows={2}
                               />
                             </div>
@@ -908,7 +918,7 @@ export default function ConfidentialAIPage() {
                               size="icon"
                               onClick={() => fileInputRef.current?.click()}
                               disabled={isSending}
-                              className="rounded-xl h-[60px] w-[60px] shrink-0"
+                              className="h-[60px] w-[60px] shrink-0 rounded-xl border border-black/10 bg-white/75 text-black hover:bg-white"
                               title="Upload files"
                             >
                               <Paperclip className="size-5" />
@@ -916,7 +926,7 @@ export default function ConfidentialAIPage() {
                             <Button
                               type="submit"
                               size="icon"
-                              className="rounded-xl h-[60px] w-[60px] shrink-0"
+                              className="h-[60px] w-[60px] shrink-0 rounded-xl bg-black text-white hover:bg-black/90"
                               disabled={isSending || (!input.trim() && uploadedFiles.length === 0) || !providerApiBase}
                             >
                               <Send className="size-5" />
@@ -926,22 +936,21 @@ export default function ConfidentialAIPage() {
                         </form>
                       </CardContent>
                     </Card>
-                  </div>
                 </div>
               </section>
-              <aside className="flex flex-col gap-4 order-2 lg:order-1">
-                <Card className="border-0 bg-background/60 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/50">
-                  <CardContent className="space-y-4 p-5">
+              <aside className="order-2 flex flex-col gap-4 lg:order-1">
+                <Card className="border border-black/15 bg-white/75 shadow-[0_35px_80px_-65px_rgba(0,0,0,0.65)] backdrop-blur">
+                  <CardContent className="space-y-4 p-6">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <h2 className="text-sm font-semibold">Session details</h2>
-                        <p className="text-xs text-muted-foreground mt-1">{connectionSummary}</p>
+                        <h2 className="text-sm font-semibold text-black">Session details</h2>
+                        <p className="mt-1 text-xs text-black/60">{connectionSummary}</p>
                       </div>
                       <Button
                         type="button"
                         size="sm"
-                        variant="outline"
-                        className="h-8 shrink-0 self-start rounded-full px-3 text-xs font-semibold uppercase tracking-wide"
+                        variant="ghost"
+                        className="h-8 shrink-0 self-start rounded-full border border-black/20 px-3 text-[11px] font-semibold uppercase tracking-[0.24em] text-black transition hover:bg-black hover:text-white"
                         onClick={() => setShowAdvancedSettings((previous) => !previous)}
                       >
                         {showAdvancedSettings ? "Hide Advanced" : "Advanced"}
@@ -950,43 +959,43 @@ export default function ConfidentialAIPage() {
                     <div className="space-y-3 text-xs">
                       {providerModel && (
                         <div className="flex items-center gap-2">
-                          <Bot className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground">
+                          <Bot className="size-4 text-black/60" />
+                          <span className="text-black/60">
                             <span className="font-medium">Model:</span> {providerModel}
                           </span>
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <Bot className="size-4 text-muted-foreground/80" />
-                        <span className="text-muted-foreground">
+                        <Bot className="size-4 text-black/60" />
+                        <span className="text-black/60">
                           <span className="font-medium">Assistant:</span> {assistantName}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className={cn("size-4", providerConfigured ? "text-primary" : "text-muted-foreground/60")} />
-                        <span className="text-muted-foreground">
+                        <CheckCircle2 className={cn("size-4", providerConfigured ? "text-black" : "text-black/25")} />
+                        <span className="text-black/60">
                           <span className="font-medium">Base URL:</span>{" "}
                           {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
                         </span>
                       </div>
                       {providerHost && (
                         <div className="flex items-center gap-2">
-                          <Globe className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground" title={providerHost}>
+                          <Globe className="size-4 text-black/60" />
+                          <span className="text-black/60" title={providerHost}>
                             <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
                           </span>
                         </div>
                       )}
                       <div className="flex items-center gap-2">
-                        <Lock className="size-4 text-muted-foreground/80" />
-                        <span className="text-muted-foreground">
+                        <Lock className="size-4 text-black/60" />
+                        <span className="text-black/60">
                           <span className="font-medium">Bearer token:</span> {tokenPresent ? "Loaded in session" : "Not provided"}
                         </span>
                       </div>
                       {cacheSalt && (
                         <div className="flex items-center gap-2">
-                          <Key className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground" title={cacheSalt}>
+                          <Key className="size-4 text-black/60" />
+                          <span className="text-black/60" title={cacheSalt}>
                             <span className="font-medium">KV cache salt:</span>{" "}
                             <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
                           </span>
@@ -994,12 +1003,12 @@ export default function ConfidentialAIPage() {
                       )}
                     </div>
                     {showAdvancedSettings && (
-                      <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-xs">
-                        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
+                      <div className="space-y-3 rounded-2xl border border-black/15 bg-white/80 p-5 text-xs text-black/70">
+                        <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-black/60">
                           Advanced provider settings
                         </h3>
-                        <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
-                          <span className="font-medium">Base URL</span>
+                        <label htmlFor="provider-base-url" className="block space-y-1 text-black/60">
+                          <span className="font-medium text-black">Base URL</span>
                           <input
                             id="provider-base-url"
                             type="url"
@@ -1009,11 +1018,11 @@ export default function ConfidentialAIPage() {
                             placeholder="https://tee.example.com/v1"
                             value={providerBaseUrlInput}
                             onChange={(event) => setProviderBaseUrlInput(event.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm text-black placeholder:text-black/40 focus:outline-none focus:ring-2 focus:ring-black/30"
                           />
                         </label>
-                        <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
-                          <span className="font-medium">Bearer token</span>
+                        <label htmlFor="provider-api-key" className="block space-y-1 text-black/60">
+                          <span className="font-medium text-black">Bearer token</span>
                           <input
                             id="provider-api-key"
                             type="password"
@@ -1022,7 +1031,7 @@ export default function ConfidentialAIPage() {
                             placeholder="token-..."
                             value={providerApiKeyInput}
                             onChange={(event) => setProviderApiKeyInput(event.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-sm text-black focus:outline-none focus:ring-2 focus:ring-black/30"
                           />
                         </label>
                         {configError && (
@@ -1030,74 +1039,74 @@ export default function ConfidentialAIPage() {
                             {configError}
                           </div>
                         )}
-                        <p className="text-[11px] text-muted-foreground">
+                        <p className="text-[11px] text-black/55">
                           Stored locally. Refreshing the page clears the token (session storage).
                         </p>
                       </div>
                     )}
                   </CardContent>
                 </Card>
-                <Card className="border-0 bg-background/60 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/50">
+                <Card className="border border-black/15 bg-white/75 shadow-[0_35px_80px_-65px_rgba(0,0,0,0.65)] backdrop-blur">
                   <CardContent className="p-0">
                     <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="proofs" className="border-b-0">
-                        <AccordionTrigger className="px-5 py-4 text-sm font-medium hover:no-underline">
+                        <AccordionTrigger className="px-5 py-4 text-sm font-medium text-black hover:no-underline hover:bg-white/70">
                           <div className="flex items-center gap-2">
-                            <ShieldCheck className="size-4 text-primary" />
+                            <ShieldCheck className="size-4 text-black" />
                             <span>Proof of Confidentiality</span>
                           </div>
                         </AccordionTrigger>
-                        <AccordionContent className="space-y-3 px-5 pb-5 text-sm text-muted-foreground">
+                        <AccordionContent className="space-y-3 px-5 pb-5 text-sm text-black/70">
                           <p>
                             These attestations verify that your data is processed within a secure, isolated, and measured
                             environment.
                           </p>
                           <div className="space-y-3">
-                            <div className="rounded-lg border bg-background p-3">
+                            <div className="rounded-lg border border-black/10 bg-white/85 p-3">
                               <div className="flex items-center justify-between text-xs font-medium">
                                 <span className="inline-flex items-center gap-2">
-                                  <Cpu className="size-3.5" /> Intel TDX
+                                  <Cpu className="size-3.5 text-black/70" /> Intel TDX
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-success">
                                   <CheckCircle2 className="size-3.5" /> Verified
                                 </span>
                               </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">quote: 0x9f…a3c</p>
+                              <p className="mt-1.5 break-all font-mono text-xs text-black/60">quote: 0x9f…a3c</p>
                             </div>
-                            <div className="rounded-lg border bg-background p-3">
+                            <div className="rounded-lg border border-black/10 bg-white/85 p-3">
                               <div className="flex items-center justify-between text-xs font-medium">
                                 <span className="inline-flex items-center gap-2">
-                                  <Shield className="size-3.5" /> TLS Channel
+                                  <Shield className="size-3.5 text-black/70" /> TLS Channel
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-success">
                                   <CheckCircle2 className="size-3.5" /> Verified
                                 </span>
                               </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">
+                              <p className="mt-1.5 break-all font-mono text-xs text-black/60">
                                 tls: 1.3 · ECDHE-RSA · AES-256-GCM
                               </p>
                             </div>
-                            <div className="rounded-lg border bg-background p-3">
+                            <div className="rounded-lg border border-black/10 bg-white/85 p-3">
                               <div className="flex items-center justify-between text-xs font-medium">
                                 <span className="inline-flex items-center gap-2">
-                                  <Cpu className="size-3.5" /> NVIDIA GPU
+                                  <Cpu className="size-3.5 text-black/70" /> NVIDIA GPU
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-success">
                                   <CheckCircle2 className="size-3.5" /> Verified
                                 </span>
                               </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">attest: device cert</p>
+                              <p className="mt-1.5 break-all font-mono text-xs text-black/60">attest: device cert</p>
                             </div>
-                            <div className="rounded-lg border bg-background p-3">
+                            <div className="rounded-lg border border-black/10 bg-white/85 p-3">
                               <div className="flex items-center justify-between text-xs font-medium">
                                 <span className="inline-flex items-center gap-2">
-                                  <Lock className="size-3.5" /> Runtime
+                                  <Lock className="size-3.5 text-black/70" /> Runtime
                                 </span>
                                 <span className="inline-flex items-center gap-1 text-success">
                                   <CheckCircle2 className="size-3.5" /> Verified
                                 </span>
                               </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">policy: sha256:…</p>
+                              <p className="mt-1.5 break-all font-mono text-xs text-black/60">policy: sha256:…</p>
                             </div>
                           </div>
                         </AccordionContent>

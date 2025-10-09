@@ -13,7 +13,6 @@ import {
   X,
   Moon,
   Sun,
-  ArrowRight,
   Star,
   Zap,
   Shield,
@@ -34,7 +33,7 @@ import { useTheme } from "next-themes"
 export default function LandingPage() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { theme, setTheme } = useTheme()
+  const { theme, resolvedTheme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
 
@@ -56,8 +55,9 @@ export default function LandingPage() {
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
 
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark")
+  const activeTheme = (theme === "system" ? resolvedTheme : theme) ?? "light"
+  const handleThemeToggle = () => {
+    setTheme(activeTheme === "dark" ? "light" : "dark")
   }
 
   const container = {
@@ -139,24 +139,34 @@ export default function LandingPage() {
               FAQ
             </Link>
           </nav>
-          <div className="hidden md:flex gap-4 items-center">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} className="rounded-full">
-              {mounted && theme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+          <div className="hidden md:flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleThemeToggle}
+              className="rounded-full border border-black/15 bg-white/70 text-black hover:bg-white/90"
+            >
+              {mounted && activeTheme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
               <span className="sr-only">Toggle theme</span>
             </Button>
-            <Button className="rounded-full" asChild>
+            <Button className="rounded-full bg-black px-5 text-white hover:bg-black/90" asChild>
               <Link href="/confidential-ai" prefetch={false}>
                 Try Confidential AI
                 <ChevronRight className="ml-1 size-4" />
               </Link>
             </Button>
-            <Button variant="outline" className="rounded-full" asChild>
+            <Button variant="outline" className="rounded-full border border-black px-5 text-black hover:bg-black/10" asChild>
               <a href="mailto:contact@concrete-security.com">Contact Us</a>
             </Button>
           </div>
           <div className="flex items-center gap-4 md:hidden">
-            <Button variant="ghost" size="icon" onClick={toggleTheme} className="rounded-full">
-              {mounted && theme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleThemeToggle}
+              className="rounded-full border border-black/15 bg-white/70 text-black hover:bg-white/90"
+            >
+              {mounted && activeTheme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
             </Button>
             <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
               {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
@@ -184,13 +194,13 @@ export default function LandingPage() {
                 FAQ
               </Link>
               <div className="flex flex-col gap-2 pt-2 border-t">
-                <Button className="rounded-full" asChild>
+                <Button className="rounded-full bg-black px-5 text-white hover:bg-black/90" asChild>
                   <Link href="/confidential-ai" prefetch={false} onClick={() => setMobileMenuOpen(false)}>
                     Try Confidential AI
                     <ChevronRight className="ml-1 size-4" />
                   </Link>
                 </Button>
-                <Button variant="outline" className="rounded-full" asChild>
+                <Button variant="outline" className="rounded-full border border-black px-5 text-black hover:bg-black/10" asChild>
                   <a href="mailto:contact@concrete-security.com">Contact Us</a>
                 </Button>
               </div>
@@ -200,51 +210,63 @@ export default function LandingPage() {
       </header>
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="w-full py-16 md:py-28 overflow-hidden">
-          <div className="container px-4 md:px-6 max-w-screen-xl">
-            <div className="grid gap-10 md:grid-cols-12 md:gap-12 items-start">
+        <section className="relative overflow-hidden bg-[#E2E2E2] py-20 text-black md:py-28">
+          <div
+            className="pointer-events-none absolute left-1/2 top-[-8rem] h-[440px] w-[848px] -translate-x-1/2 rounded-[50%] border border-black/5 opacity-70"
+            aria-hidden="true"
+          />
+          <div
+            className="pointer-events-none absolute right-[-10%] top-[-30%] h-[320px] w-[320px] rounded-full blur-3xl"
+            style={{
+              background: "radial-gradient(circle at top, rgba(27,9,134,0.35) 0%, rgba(27,9,134,0) 70%)",
+            }}
+            aria-hidden="true"
+          />
+          <div className="container relative z-10 max-w-screen-xl px-4 md:px-6">
+            <div className="grid items-start gap-12 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] md:gap-16">
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
-                className="md:col-span-7"
+                className="flex flex-col gap-8"
               >
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight tracking-tight mb-6">
-                  Concrete AI
-                </h1>
-                <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-xl">
-                  Confidential AI for sensitive data — security, privacy, and confidentiality backed by modern cryptography.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Button size="lg" className="rounded-full h-12 px-8 text-base" asChild>
+                <div className="space-y-6">
+                  <h1 className="text-[2.75rem] font-bold leading-[1.06] tracking-tight text-black md:text-[3.25rem]">
+                    Concrete AI
+                  </h1>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <Button
+                    className="h-9 rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90"
+                    asChild
+                  >
                     <Link href="/confidential-ai" prefetch={false}>
                       Try Confidential AI
-                      <ArrowRight className="ml-2 size-4" />
                     </Link>
                   </Button>
-                  <Button size="lg" variant="outline" className="rounded-full h-12 px-8 text-base" asChild>
+                  <Button
+                    variant="outline"
+                    className="h-9 rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10"
+                    asChild
+                  >
                     <a href="mailto:contact@concrete-security.com">Contact Us</a>
                   </Button>
                 </div>
-                <p className="text-sm text-muted-foreground mt-4">
-                Have a confidential AI use case? <a className="underline" href="mailto:contact@concrete-security.com">Contact us</a>.
-                </p>
               </motion.div>
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 24 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.6, delay: 0.1 }}
-                className="md:col-span-5 relative"
+                className="relative flex flex-col items-start"
               >
-                <div className="rounded-2xl overflow-hidden shadow-xl ring-1 ring-border/50 bg-background">
-                  <Image
-                    src="/assets/hero.png"
-                    width={1280}
-                    height={960}
-                    alt="Concrete AI visual"
-                    className="w-full h-72 md:h-96 object-cover"
-                    priority
-                  />
+                <div className="absolute inset-x-8 -top-10 h-24 rounded-full bg-[radial-gradient(circle_at_top,#1B0986_0%,rgba(27,9,134,0)_70%)] opacity-30 blur-lg" />
+                <div className="relative rounded-3xl border border-black/10 bg-[#E2E2E2] p-8 shadow-[0_24px_60px_-32px_rgba(0,0,0,0.55)]">
+                  <div className="mb-6 inline-flex h-[29px] w-[29px] items-center justify-center rounded-md bg-[#1B0986] p-[6px]">
+                    <Shield className="size-4 text-white" />
+                  </div>
+                  <p className="text-base leading-[1.38] text-black">
+                    Confidential AI for sensitive data — security, privacy, and confidentiality backed by modern cryptography.
+                  </p>
                 </div>
               </motion.div>
             </div>
