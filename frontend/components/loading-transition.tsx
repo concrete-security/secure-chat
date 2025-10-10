@@ -24,8 +24,8 @@ export function LoadingTransition({ message = "Establishing secure connection...
         />
         <div className="relative flex items-center justify-center">
           <div className="absolute inset-0 animate-ping rounded-full bg-[#1B0986]/20" style={{ animationDuration: "2s" }} />
-          <div className="relative flex size-20 items-center justify-center rounded-full border-2 border-[#1B0986]/30 bg-white/80 shadow-lg">
-            <Lock className="size-8 text-[#1B0986] animate-pulse" />
+          <div className="relative flex size-20 items-center justify-center rounded-full border-2 border-[#1B0986]/30 bg-white shadow-lg">
+            <Lock className="size-8 animate-pulse text-[#1B0986]" />
           </div>
         </div>
         <div className="flex flex-col items-center gap-3">

@@ -61,17 +61,28 @@ line-height: 15px;
 
 ## Component Library
 
-### 1. Main Container
-- **Dimensions:** 871px × 495px
-- **Background:** `#E2E2E2`
-- **Position:** Relative
+### 1. Frame 1 (Main Container)
+```css
+position: relative;
+width: 871px;
+height: 495px;
+background: #E2E2E2;
+```
 
-### 2. Content Section
-- **Width:** 848px × 440px
-- **Position:** Absolute
-- **Background:** `#E2E2E2`
+### 2. Text on a Path (Content Section)
+```css
+position: absolute;
+width: 848px;
+height: 440px;
+background: #E2E2E2;
+```
 
-### 3. Button Components
+### 3. Buttons Container
+```css
+position: relative;
+width: 324px;
+height: 36px;
+```
 
 #### Primary Button (Filled)
 ```css
@@ -81,8 +92,11 @@ justify-content: center;
 align-items: center;
 padding: 10px 12px;
 gap: 10px;
+position: absolute;
 width: 150px;
 height: 36px;
+left: 0px;
+top: 0px;
 background: #000000;
 color: #FFFFFF;
 ```
@@ -95,26 +109,46 @@ justify-content: center;
 align-items: center;
 padding: 10px 12px;
 gap: 10px;
+position: absolute;
 width: 150px;
 height: 36px;
+left: 174px;
+top: 0px;
 border: 1px solid #000000;
 color: #000000;
-background: transparent;
 ```
 
-### 4. Icon Card Component
+### 4. Colors (Palette Display)
+```css
+position: relative;
+width: 305px;
+height: 67px;
+```
+- Contains 4 color swatches (67px × 67px each)
+- Swatches positioned at: 0px, 79px, 158px, 238px (left positions)
+
+### 5. Gradient Section
+```css
+position: relative;
+width: 871px;
+height: 110px;
+```
+- Contains radial gradient background
+
+### 6. Icon + Text Card
 ```css
 display: flex;
 flex-direction: column;
 align-items: flex-start;
 padding: 30px;
 gap: 17px;
+position: relative;
 width: 289px;
 height: 204px;
 background: #E2E2E2;
 ```
 
-#### Icon Badge
+#### Icon Badge within Card
 ```css
 display: flex;
 flex-direction: row;
@@ -124,12 +158,7 @@ gap: 10px;
 width: 29px;
 height: 29px;
 background: #1B0986;
-/* Icon color: #FFFFFF */
 ```
-
-### 5. Gradient Header
-- **Dimensions:** 871px × 110px
-- **Effect:** Radial gradient from gray to deep blue
 
 ## Layout Guidelines
 
@@ -145,12 +174,31 @@ background: #1B0986;
 - **Max Text Width:** 389px for descriptions
 
 ### Component Dimensions
-- **Color Swatches:** 67px × 67px
-- **Swatch Spacing:** 79px between centers
-- **Button Container:** 324px width
-- **Button Spacing:** 174px between buttons
+- **Frame 1 (Main):** 871px × 495px (relative)
+- **Text on Path:** 848px × 440px (absolute)
+- **Gradient Section:** 871px × 110px (relative)
+- **Buttons Container:** 324px × 36px (relative)
+- **Individual Buttons:** 150px × 36px (absolute within container)
+- **Colors Container:** 305px × 67px (relative)
+- **Color Swatches:** 67px × 67px each
+- **Icon + Text Card:** 289px × 204px (relative, flexbox)
+- **Button Spacing:** 174px left offset for second button
 
 ## Implementation Notes
+
+### Positioning Strategy
+The template uses a mixed positioning approach:
+- **Relative positioning:** Frame 1, Buttons container, Colors container, Gradient section, Icon + Text card
+- **Absolute positioning:** Text on Path overlay, Individual buttons within container, Text elements within sections
+
+### Component Hierarchy
+1. **Frame 1** (871px × 495px) - Main relative container
+   - **Text on Path** (848px × 440px) - Absolute overlay
+   - **Gradient** (871px × 110px) - Relative section
+   - **Buttons Container** (324px × 36px) - Relative wrapper
+     - Individual buttons positioned absolutely within
+   - **Colors** (305px × 67px) - Relative palette display
+   - **Icon + Text** (289px × 204px) - Relative flexbox card
 
 ### Responsive Considerations
 - Fixed widths are specified - consider converting to responsive units
@@ -220,3 +268,6 @@ background: #1B0986;
   - layout.css
   - utilities.css
 ```
+
+## Version History
+- **v1.0:** Initial template guide based on provided CSS specifications

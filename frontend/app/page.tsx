@@ -8,8 +8,6 @@ import {
   ArrowRight,
   Shield,
   Lock,
-  Layers,
-  Users,
   Fingerprint,
   CircuitBoard,
   FileLock2,
@@ -41,13 +39,13 @@ const capabilityCards = [
   {
     title: "Confidential Collaboration",
     description: "Invite teammates and partners into isolated workspaces with reversible disclosure and escrowed access.",
-    icon: Users,
+    icon: FileLock2,
   },
   {
     title: "Sealed Knowledge Retrieval",
     description:
       "Operate RAG pipelines on encrypted corpora with per-query attestations and deterministic policy enforcement.",
-    icon: FileLock2,
+    icon: Shield,
   },
 ]
 
@@ -196,69 +194,57 @@ export default function LandingPage() {
         aria-hidden
       />
       <header className="relative z-10 border-b border-black/10 bg-transparent">
-        <div className="container flex flex-col gap-6 px-6 py-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <Link href="/" className="flex items-center gap-3 text-lg font-semibold">
-              <Image src="/logo.png" alt="Concrete AI logo" width={32} height={32} className="rounded-md" />
-              <span>Concrete AI</span>
-            </Link>
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                className="h-9 w-full rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90 sm:w-auto sm:min-w-[190px]"
-                asChild
-              >
-                <Link href="/confidential-ai">
-                  Try Confidential AI
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                className="h-9 w-full rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10 sm:w-auto sm:min-w-[190px]"
-                asChild
-              >
-                <a href="mailto:contact@concrete-security.com">Book a Demo</a>
-              </Button>
-            </div>
+        <div className="container flex items-center justify-between gap-4 px-6 py-6">
+          <Link href="/" className="flex items-center gap-3 text-lg font-semibold">
+            <Image src="/logo.png" alt="Concrete AI logo" width={32} height={32} className="rounded-md" />
+            <span>Concrete AI</span>
+          </Link>
+          <div className="flex items-center gap-3">
+            <Button
+              className="h-9 rounded-full bg-black px-5 text-sm font-normal text-white hover:bg-black/90"
+              asChild
+            >
+              <Link href="/confidential-ai">
+                Try Confidential AI
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-9 rounded-full border border-black px-5 text-sm font-normal text-black hover:bg-black/10"
+              asChild
+            >
+              <a href="mailto:contact@concrete-security.com">Book a Demo</a>
+            </Button>
           </div>
-          <p className="max-w-[420px] text-xs uppercase leading-5 tracking-[0.2em] text-black/60 md:max-w-[520px]">
-            Confidential AI for sensitive data — security, privacy, and confidentiality backed by modern cryptography.
-          </p>
         </div>
       </header>
       <main className="relative z-10">
-        <section className="flex justify-center px-4 py-12 md:py-20">
-          <div className="relative w-full max-w-[880px] overflow-hidden rounded-[40px] border border-black/15 bg-[#E2E2E2] pb-16 pt-12 shadow-[0_50px_120px_-45px_rgba(0,0,0,0.6)]">
+        <section className="flex justify-center px-4 py-16 md:py-24">
+          <div className="relative w-full max-w-[871px] overflow-hidden rounded-[40px] border border-black/15 bg-[#E2E2E2] px-12 pb-16 pt-12 shadow-[0_50px_120px_-45px_rgba(0,0,0,0.6)]">
             <div
-              className="pointer-events-none absolute inset-x-8 top-0 h-[170px] -translate-y-1/2 rounded-[160px] bg-[radial-gradient(circle_at_top,#E2E2E2_20%,rgba(27,9,134,0.42)_65%,rgba(27,9,134,0)_100%)]"
-              aria-hidden
-            />
+              className="absolute inset-x-8 top-0 h-[170px] -translate-y-1/2 rounded-[160px] bg-[radial-gradient(circle_at_top,#E2E2E2_20%,rgba(27,9,134,0.42)_65%,rgba(27,9,134,0)_100%)] flex items-end justify-center pb-4"
+            >
+              <h1 className="text-[52px] font-bold leading-[55px] text-black">
+                Confidential AI
+              </h1>
+            </div>
             <div
               className="pointer-events-none absolute inset-0 bg-[linear-gradient(211.15deg,rgba(0,0,0,0)_18.84%,rgba(0,0,0,0.14)_103.94%)]"
               aria-hidden
             />
-            <div className="relative flex flex-col items-center gap-8 px-8 md:px-12">
-              <div className="flex w-full max-w-2xl flex-col items-center gap-6 text-center">
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#1B0986]/30 bg-[#1B0986]/5 px-4 py-1.5">
-                  <Lock className="h-3.5 w-3.5 text-[#1B0986]" />
-                  <span className="text-xs font-medium uppercase tracking-[0.3em] text-[#1B0986]">
-                    Secure Session
-                  </span>
-                </div>
-                <h1 className="text-[48px] font-bold leading-[52px] md:text-[52px] md:leading-[55px]">
-                  Query confidential documents with AI
-                </h1>
-                <p className="max-w-[520px] text-base leading-[24px] text-black/70">
-                  Upload sensitive files and ask questions in a cryptographically secured environment. Every query is encrypted end-to-end with verifiable attestation.
+            <div className="relative flex flex-col gap-8 pt-16">
+              <div className="flex flex-col gap-6 text-center">
+                <p className="max-w-[520px] mx-auto text-base leading-[22px]">
+                  Query your confidential documents securely. Upload sensitive files and ask questions in a cryptographically secured environment. Every query is encrypted end-to-end with verifiable attestation.
                 </p>
               </div>
-
-              <form onSubmit={handleSubmit} className="w-full max-w-2xl">
-                <div className="flex flex-col gap-4 rounded-[32px] border border-black/15 bg-white/70 p-6 shadow-[0_24px_68px_-38px_rgba(0,0,0,0.55)] backdrop-blur-sm">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-black/60">
-                    <Shield className="h-3.5 w-3.5 text-[#1B0986]" />
-                    <span>End-to-end encrypted</span>
-                  </div>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+                <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-black/60">
+                  <Shield className="h-3.5 w-3.5 text-[#1B0986]" />
+                  <span>End-to-end encrypted</span>
+                </div>
+                <div className="flex flex-col gap-4 rounded-[32px] border border-black/15 bg-white/70 p-6 backdrop-blur-sm">
                   {uploadedFiles.length > 0 && (
                     <div className="space-y-2">
                       {uploadedFiles.map((file, index) => (
@@ -268,7 +254,7 @@ export default function LandingPage() {
                         >
                           <div className="flex items-center gap-2">
                             <FileText className="size-3 text-[#1B0986]" />
-                            <span className="font-medium text-foreground">{file.name}</span>
+                            <span className="font-medium text-black">{file.name}</span>
                             <span className="text-black/60">({formatFileSize(file.size)})</span>
                           </div>
                           <Button
@@ -284,50 +270,49 @@ export default function LandingPage() {
                       ))}
                     </div>
                   )}
-                  <div className="flex w-full items-start gap-2">
-                    <div className="flex-1">
-                      <label htmlFor="hero-input" className="sr-only">
-                        Ask about your confidential documents
-                      </label>
-                      <textarea
-                        id="hero-input"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        disabled={isTransitioning}
-                        placeholder="Ask about your confidential documents... (e.g., Analyze this employment contract)"
-                        className="h-[80px] w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm text-foreground placeholder:text-black/40 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1B0986]/50"
-                        rows={3}
-                      />
-                    </div>
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      multiple
-                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
+                  <div className="flex w-full flex-col gap-3">
+                    <label htmlFor="hero-input" className="sr-only">
+                      Ask about your confidential documents
+                    </label>
+                    <textarea
+                      id="hero-input"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={handleKeyDown}
                       disabled={isTransitioning}
-                      className="h-[80px] w-[80px] shrink-0 rounded-2xl border border-black/15 bg-white/80 text-black hover:bg-white"
-                      title="Upload files"
-                    >
-                      <Paperclip className="h-5 w-5 text-[#1B0986]" />
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="icon"
-                      className="h-[80px] w-[80px] shrink-0 rounded-2xl bg-[#1B0986] text-white hover:bg-[#1B0986]/90 disabled:opacity-50"
-                      disabled={isTransitioning || (!input.trim() && uploadedFiles.length === 0)}
-                    >
-                      <Send className="h-6 w-6" />
-                      <span className="sr-only">Start secure session</span>
-                    </Button>
+                      placeholder="Ask about your confidential documents..."
+                      className="min-h-[120px] w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-4 text-base leading-relaxed text-black placeholder:text-black/40 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1B0986]/50"
+                      rows={4}
+                    />
+                    <div className="flex w-full items-center gap-3">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        multiple
+                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isTransitioning}
+                        className="h-12 w-12 shrink-0 rounded-xl border border-black/15 bg-white/80 text-black shadow-sm hover:bg-white hover:shadow"
+                        title="Upload files"
+                      >
+                        <Paperclip className="h-4 w-4 text-[#1B0986]" />
+                      </Button>
+                      <Button
+                        type="submit"
+                        className="flex-1 h-12 rounded-xl bg-[#1B0986] text-white shadow-sm hover:bg-[#1B0986]/90 hover:shadow disabled:opacity-50"
+                        disabled={isTransitioning || (!input.trim() && uploadedFiles.length === 0)}
+                      >
+                        <Send className="mr-2 h-4 w-4" />
+                        Start secure session
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <p className="text-xs font-medium uppercase tracking-[0.24em] text-black/50">Try an example:</p>
@@ -347,37 +332,21 @@ export default function LandingPage() {
                     </div>
                   </div>
                 </div>
+                <div className="flex items-center gap-4 text-xs text-black/60">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-3.5 w-3.5" />
+                    <span>Encrypted</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-3.5 w-3.5" />
+                    <span>Attested</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Fingerprint className="h-3.5 w-3.5" />
+                    <span>Verified</span>
+                  </div>
+                </div>
               </form>
-
-              <div className="grid w-full max-w-2xl gap-4 md:grid-cols-3">
-                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
-                    <Shield className="h-4 w-4 text-[#1B0986]" />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-semibold">Attested Execution</p>
-                    <p className="text-xs leading-relaxed text-black/60">Hardware-backed proofs verify every operation</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
-                    <Lock className="h-4 w-4 text-[#1B0986]" />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-semibold">Zero Knowledge</p>
-                    <p className="text-xs leading-relaxed text-black/60">Your data never leaves encrypted enclaves</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
-                    <Sparkles className="h-4 w-4 text-[#1B0986]" />
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-semibold">Production Ready</p>
-                    <p className="text-xs leading-relaxed text-black/60">Enterprise-grade infrastructure at scale</p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </section>
@@ -463,7 +432,7 @@ export default function LandingPage() {
               </p>
               <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <Button
-                  className="h-9 w-full rounded-full border border-white bg-white px-6 text-sm font-normal text-black hover:bg-white/90 sm:w-auto sm:min-w-[200px]"
+                  className="h-9 w-full rounded-full border border-white bg-white px-5 text-sm font-normal text-black hover:bg-white/90 sm:w-[150px]"
                   asChild
                 >
                   <Link href="/confidential-ai">
@@ -473,7 +442,7 @@ export default function LandingPage() {
                 </Button>
                 <Button
                   variant="outline"
-                  className="h-9 w-full rounded-full border border-white/70 px-6 text-sm font-normal text-white hover:bg-white/10 sm:w-auto sm:min-w-[200px]"
+                  className="h-9 w-full rounded-full border border-white/70 px-5 text-sm font-normal text-white hover:bg-white/10 sm:w-[150px]"
                   asChild
                 >
                   <a href="mailto:contact@concrete-security.com">Schedule a briefing</a>
