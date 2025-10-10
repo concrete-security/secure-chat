@@ -4,63 +4,63 @@
 
 @layer base {
   :root {
-    /* Light Mode: Clean, crisp, and professional */
-    --background: 0 0% 100%;
-    --foreground: 220 20% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 12%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 12%;
-    /* Brand: A strong, trustworthy blue */
-    --primary: 210 100% 50%;
+    /* Light Mode: Concrete AI signature palette */
+    --background: 0 0% 88%;
+    --foreground: 0 0% 8%;
+    --card: 0 0% 95%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 96%;
+    --popover-foreground: 0 0% 12%;
+    /* Brand: Deep cryptographic blue */
+    --primary: 249 87% 28%;
     --primary-foreground: 0 0% 100%;
-    /* Subtle tinted surfaces */
-    --secondary: 220 30% 96%;
-    --secondary-foreground: 220 20% 25%;
-    --muted: 220 30% 96%;
-    --muted-foreground: 220 15% 45%;
-    --accent: 220 30% 96%;
-    --accent-foreground: 220 20% 25%;
+    /* Neutral surfaces */
+    --secondary: 0 0% 100%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 38%;
+    --accent: 249 30% 90%;
+    --accent-foreground: 249 87% 28%;
     /* Feedback colors */
-    --destructive: 0 84% 62%;
+    --destructive: 0 84% 55%;
     --destructive-foreground: 0 0% 98%;
-    --success: 140 70% 40%;
+    --success: 145 72% 29%;
     --success-foreground: 0 0% 100%;
     /* UI chrome */
-    --border: 220 20% 90%;
-    --input: 220 20% 90%;
-    --ring: 210 100% 50%;
-    /* Sharper, more modern radius */
-    --radius: 0.75rem;
+    --border: 0 0% 70%;
+    --input: 0 0% 70%;
+    --ring: 249 87% 28%;
+    /* Softer radius to echo template cards */
+    --radius: 1rem;
   }
 
   .dark {
-    /* Dark Mode: Deep, secure, and focused */
-    --background: 220 30% 8%;
-    --foreground: 220 15% 95%;
-    --card: 220 30% 12%;
-    --card-foreground: 220 15% 95%;
-    --popover: 220 30% 8%;
-    --popover-foreground: 220 15% 95%;
-    /* Brand: A vibrant, electric blue for high visibility */
-    --primary: 190 100% 55%;
-    --primary-foreground: 220 30% 5%;
+    /* Dark Mode: Secure midnight treatment */
+    --background: 250 65% 10%;
+    --foreground: 0 0% 100%;
+    --card: 249 55% 16%;
+    --card-foreground: 0 0% 100%;
+    --popover: 250 58% 12%;
+    --popover-foreground: 0 0% 100%;
+    /* Brand highlight */
+    --primary: 0 0% 100%;
+    --primary-foreground: 250 65% 10%;
     /* Subtle tinted surfaces */
-    --secondary: 220 30% 15%;
-    --secondary-foreground: 220 15% 95%;
-    --muted: 220 30% 15%;
-    --muted-foreground: 220 10% 65%;
-    --accent: 220 30% 15%;
-    --accent-foreground: 220 15% 95%;
+    --secondary: 250 45% 18%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 250 35% 24%;
+    --muted-foreground: 0 0% 90%;
+    --accent: 249 80% 42%;
+    --accent-foreground: 0 0% 100%;
     /* Feedback colors */
     --destructive: 0 62.8% 50%;
     --destructive-foreground: 0 0% 98%;
-    --success: 140 65% 50%;
-    --success-foreground: 0 0% 10%;
+    --success: 145 65% 45%;
+    --success-foreground: 0 0% 8%;
     /* UI chrome */
-    --border: 220 30% 20%;
-    --input: 220 30% 20%;
-    --ring: 190 100% 55%;
+    --border: 249 40% 35%;
+    --input: 249 40% 35%;
+    --ring: 0 0% 100%;
   }
 
 }

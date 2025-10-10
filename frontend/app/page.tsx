@@ -1,774 +1,290 @@
-"use client"
-
-import { useState, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { useRouter } from "next/navigation"
-import peopleData from "../people.json"
-import { motion } from "framer-motion"
 import {
-  Check,
-  ChevronRight,
-  Menu,
-  X,
-  Moon,
-  Sun,
-  Star,
-  Zap,
+  ArrowRight,
   Shield,
-  Users,
-  BarChart,
-  Layers,
   Lock,
-  Code,
-  MessageSquare,
-  Bot,
+  Layers,
+  Users,
+  Fingerprint,
+  CircuitBoard,
+  FileLock2,
+  Server,
+  Sparkles,
 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { useTheme } from "next-themes"
+
+const heroHighlights = [
+  {
+    title: "Confidential by Default",
+    description: "Attested enclaves seal prompts, parameters, and outputs so plaintext never leaves your control.",
+    icon: Shield,
+  },
+  {
+    title: "Policy-Driven Privacy",
+    description: "Granular roles, audit trails, and ephemeral tokens enforce zero-trust boundaries end to end.",
+    icon: Lock,
+  },
+  {
+    title: "Seamless Integration",
+    description: "Native support for secure RAG, fine-tuning, and analytics in existing MLOps pipelines.",
+    icon: Layers,
+  },
+]
+
+const capabilityCards = [
+  {
+    title: "Cryptographic Routing",
+    description:
+      "Route sensitive workloads through verified hardware, MPC, or FHE without sacrificing performance or trust.",
+    icon: CircuitBoard,
+  },
+  {
+    title: "Confidential Collaboration",
+    description: "Invite teammates and partners into isolated workspaces with reversible disclosure and escrowed access.",
+    icon: Users,
+  },
+  {
+    title: "Sealed Knowledge Retrieval",
+    description:
+      "Operate RAG pipelines on encrypted corpora with per-query attestations and deterministic policy enforcement.",
+    icon: FileLock2,
+  },
+]
+
+const trustSignals = [
+  {
+    title: "Attested Execution",
+    description: "Cryptographic proofs guarantee model integrity and runtime isolation.",
+    icon: Fingerprint,
+  },
+  {
+    title: "Regional Sovereignty",
+    description: "Deploy in dedicated regions with customer-owned keys and sealed telemetry.",
+    icon: Server,
+  },
+  {
+    title: "Human Alignment",
+    description: "Expert security engineers guide integrations, threat models, and readiness reviews.",
+    icon: Sparkles,
+  },
+]
 
 export default function LandingPage() {
-  const [isScrolled, setIsScrolled] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { theme, resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
-  const router = useRouter()
-
-  useEffect(() => {
-    setMounted(true)
-    void router.prefetch?.("/confidential-ai")
-  }, [router])
-
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.scrollY > 10) {
-        setIsScrolled(true)
-      } else {
-        setIsScrolled(false)
-      }
-    }
-
-    window.addEventListener("scroll", handleScroll)
-    return () => window.removeEventListener("scroll", handleScroll)
-  }, [])
-
-  const activeTheme = (theme === "system" ? resolvedTheme : theme) ?? "light"
-  const handleThemeToggle = () => {
-    setTheme(activeTheme === "dark" ? "light" : "dark")
-  }
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1,
-      },
-    },
-  }
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0 },
-  }
-
-  const features = [
-    {
-      title: "Confidential by Design",
-      description: "Run AI on sensitive data without exposing it to providers or operators.",
-      icon: <Zap className="size-5" />,
-    },
-    {
-      title: "Cryptography‑Backed Security",
-      description: "End‑to‑end protection in transit, at rest, and in use — anchored by modern cryptography.",
-      icon: <Shield className="size-5" />,
-    },
-    {
-      title: "Privacy Controls",
-      description: "Granular access, policy enforcement, and audit logs for clear governance.",
-      icon: <Users className="size-5" />,
-    },
-    {
-      title: "Compliance‑Ready",
-      description: "Support common regulatory needs with strong data boundaries and visibility.",
-      icon: <BarChart className="size-5" />,
-    },
-    {
-      title: "Seamless Integrations",
-      description: "SDKs and APIs to connect data sources and MLOps pipelines securely.",
-      icon: <Layers className="size-5" />,
-    },
-    {
-      title: "Priority Support",
-      description: "Experts to help design and scale confidentiality‑first AI systems.",
-      icon: <Star className="size-5" />,
-    },
-  ];
-
   return (
-    <div className="flex min-h-[100dvh] flex-col">
-      <header
-        className={`sticky top-0 z-50 w-full backdrop-blur-lg transition-all duration-300 ${isScrolled ? "bg-background/80 shadow-sm" : "bg-transparent"}`}
-      >
-          <div className="container flex h-16 items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 font-bold">
-            <Image src="/logo.png" alt="Concrete AI logo" width={28} height={28} className="rounded-sm" />
-            <span>Concrete AI</span>
-          </Link>
-          <nav className="hidden md:flex gap-8">
-            <Link
-              href="#features"
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Features
+    <div className="relative min-h-screen overflow-hidden bg-[#E2E2E2] text-black">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(93%_736.36%_at_38%_-100%,#E2E2E2_24.46%,#1B0986_100%)] opacity-25"
+        aria-hidden
+      />
+      <header className="relative z-10 border-b border-black/10 bg-transparent">
+        <div className="container flex flex-col gap-6 px-6 py-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <Link href="/" className="flex items-center gap-3 text-lg font-semibold">
+              <Image src="/logo.png" alt="Concrete AI logo" width={32} height={32} className="rounded-md" />
+              <span>Concrete AI</span>
             </Link>
-            
-            <Link
-              href="#pricing"
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Pricing
-            </Link>
-            <Link
-              href="#faq"
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            >
-              FAQ
-            </Link>
-          </nav>
-          <div className="hidden md:flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleThemeToggle}
-              className="rounded-full border border-black/15 bg-white/70 text-black hover:bg-white/90"
-            >
-              {mounted && activeTheme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
-              <span className="sr-only">Toggle theme</span>
-            </Button>
-            <Button className="rounded-full bg-black px-5 text-white hover:bg-black/90" asChild>
-              <Link href="/confidential-ai" prefetch={false}>
-                Try Confidential AI
-                <ChevronRight className="ml-1 size-4" />
-              </Link>
-            </Button>
-            <Button variant="outline" className="rounded-full border border-black px-5 text-black hover:bg-black/10" asChild>
-              <a href="mailto:contact@concrete-security.com">Contact Us</a>
-            </Button>
-          </div>
-          <div className="flex items-center gap-4 md:hidden">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleThemeToggle}
-              className="rounded-full border border-black/15 bg-white/70 text-black hover:bg-white/90"
-            >
-              {mounted && activeTheme === "dark" ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
-            </Button>
-            <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-              {mobileMenuOpen ? <X className="size-5" /> : <Menu className="size-5" />}
-              <span className="sr-only">Toggle menu</span>
-            </Button>
-          </div>
-        </div>
-        {/* Mobile menu */}
-        {mobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="md:hidden absolute top-16 inset-x-0 bg-background/95 backdrop-blur-lg border-b"
-          >
-            <div className="container py-4 flex flex-col gap-4">
-              <Link href="#features" className="py-2 text-sm font-medium" onClick={() => setMobileMenuOpen(false)}>
-                Features
-              </Link>
-              
-              <Link href="#pricing" className="py-2 text-sm font-medium" onClick={() => setMobileMenuOpen(false)}>
-                Pricing
-              </Link>
-              <Link href="#faq" className="py-2 text-sm font-medium" onClick={() => setMobileMenuOpen(false)}>
-                FAQ
-              </Link>
-              <div className="flex flex-col gap-2 pt-2 border-t">
-                <Button className="rounded-full bg-black px-5 text-white hover:bg-black/90" asChild>
-                  <Link href="/confidential-ai" prefetch={false} onClick={() => setMobileMenuOpen(false)}>
-                    Try Confidential AI
-                    <ChevronRight className="ml-1 size-4" />
-                  </Link>
-                </Button>
-                <Button variant="outline" className="rounded-full border border-black px-5 text-black hover:bg-black/10" asChild>
-                  <a href="mailto:contact@concrete-security.com">Contact Us</a>
-                </Button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </header>
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="relative overflow-hidden bg-[#E2E2E2] py-20 text-black md:py-28">
-          <div
-            className="pointer-events-none absolute left-1/2 top-[-8rem] h-[440px] w-[848px] -translate-x-1/2 rounded-[50%] border border-black/5 opacity-70"
-            aria-hidden="true"
-          />
-          <div
-            className="pointer-events-none absolute right-[-10%] top-[-30%] h-[320px] w-[320px] rounded-full blur-3xl"
-            style={{
-              background: "radial-gradient(circle at top, rgba(27,9,134,0.35) 0%, rgba(27,9,134,0) 70%)",
-            }}
-            aria-hidden="true"
-          />
-          <div className="container relative z-10 max-w-screen-xl px-4 md:px-6">
-            <div className="grid items-start gap-12 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] md:gap-16">
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                className="flex flex-col gap-8"
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                className="h-9 w-full rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90 sm:w-auto sm:min-w-[190px]"
+                asChild
               >
+                <Link href="/confidential-ai">
+                  Try Confidential AI
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-9 w-full rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10 sm:w-auto sm:min-w-[190px]"
+                asChild
+              >
+                <a href="mailto:contact@concrete-security.com">Book a Demo</a>
+              </Button>
+            </div>
+          </div>
+          <p className="max-w-[420px] text-xs uppercase leading-5 tracking-[0.2em] text-black/60 md:max-w-[520px]">
+            Confidential AI for sensitive data — security, privacy, and confidentiality backed by modern cryptography.
+          </p>
+        </div>
+      </header>
+      <main className="relative z-10">
+        <section className="flex justify-center px-4 py-12 md:py-20">
+          <div className="relative w-full max-w-[880px] overflow-hidden rounded-[40px] border border-black/15 bg-[#E2E2E2] pb-16 pt-12 shadow-[0_50px_120px_-45px_rgba(0,0,0,0.6)]">
+            <div
+              className="pointer-events-none absolute inset-x-8 top-0 h-[170px] -translate-y-1/2 rounded-[160px] bg-[radial-gradient(circle_at_top,#E2E2E2_20%,rgba(27,9,134,0.42)_65%,rgba(27,9,134,0)_100%)]"
+              aria-hidden
+            />
+            <div
+              className="pointer-events-none absolute inset-0 bg-[linear-gradient(211.15deg,rgba(0,0,0,0)_18.84%,rgba(0,0,0,0.14)_103.94%)]"
+              aria-hidden
+            />
+            <div className="relative grid gap-12 px-8 md:grid-cols-[minmax(0,0.58fr)_minmax(0,0.42fr)] md:px-12">
+              <div className="flex flex-col gap-10">
                 <div className="space-y-6">
-                  <h1 className="text-[2.75rem] font-bold leading-[1.06] tracking-tight text-black md:text-[3.25rem]">
+                  <span className="inline-flex items-center rounded-full border border-black/50 px-4 py-1 text-xs font-medium uppercase tracking-[0.3em]">
                     Concrete AI
-                  </h1>
+                  </span>
+                  <h1 className="text-[52px] font-bold leading-[55px]">Confidential AI at production scale.</h1>
+                  <p className="max-w-[389px] text-base leading-[22px]">
+                    Concrete AI delivers verifiable confidentiality so you can operationalize sensitive data with trusted
+                    AI. Every request inherits cryptographic proof, preserving privacy, compliance, and proprietary IP.
+                  </p>
                 </div>
-                <div className="flex flex-wrap gap-4">
+                <div className="flex flex-col gap-3 sm:flex-row">
                   <Button
-                    className="h-9 rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90"
+                    className="h-9 w-full rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90 sm:w-auto sm:min-w-[190px]"
                     asChild
                   >
-                    <Link href="/confidential-ai" prefetch={false}>
-                      Try Confidential AI
+                    <Link href="/confidential-ai">
+                      Launch Console
+                      <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
                   <Button
                     variant="outline"
-                    className="h-9 rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10"
+                    className="h-9 w-full rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10 sm:w-auto sm:min-w-[190px]"
                     asChild
                   >
-                    <a href="mailto:contact@concrete-security.com">Contact Us</a>
+                    <a href="mailto:contact@concrete-security.com">Talk to Security</a>
                   </Button>
                 </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.1 }}
-                className="relative flex flex-col items-start"
-              >
-                <div className="absolute inset-x-8 -top-10 h-24 rounded-full bg-[radial-gradient(circle_at_top,#1B0986_0%,rgba(27,9,134,0)_70%)] opacity-30 blur-lg" />
-                <div className="relative rounded-3xl border border-black/10 bg-[#E2E2E2] p-8 shadow-[0_24px_60px_-32px_rgba(0,0,0,0.55)]">
-                  <div className="mb-6 inline-flex h-[29px] w-[29px] items-center justify-center rounded-md bg-[#1B0986] p-[6px]">
-                    <Shield className="size-4 text-white" />
-                  </div>
-                  <p className="text-base leading-[1.38] text-black">
-                    Confidential AI for sensitive data — security, privacy, and confidentiality backed by modern cryptography.
-                  </p>
-                </div>
-              </motion.div>
-            </div>
-          </div>
-        </section>
-
-        {/* Security Guarantees Section */}
-        <section className="w-full py-16 md:py-24 bg-muted/30">
-          <div className="container px-4 md:px-6 max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col items-start justify-center space-y-4 text-left mb-10"
-            >
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Security, Privacy, and IP Protection</h2>
-              <p className="max-w-[900px] text-muted-foreground md:text-lg">
-                Concrete AI gives privacy for both users and operators by encrypting everything, including both prompts and
-                models. Use of your data is controlled by strict attested execution and additional policy controls. Nobody can
-                see your data, not even us.
-              </p>
-            </motion.div>
-            <div className="grid gap-6 sm:grid-cols-3">
-              <div className="rounded-lg border bg-card p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Shield className="size-4" /> Cryptographic Security</div>
-                <p className="text-sm text-muted-foreground">Encryption in transit, at rest, and in use with attestation and auditability.</p>
               </div>
-              <div className="rounded-lg border bg-card p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Lock className="size-4" /> User Privacy</div>
-                <p className="text-sm text-muted-foreground">Client‑side encryption ensures plaintext data never leaves user control.</p>
-              </div>
-              <div className="rounded-lg border bg-card p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Layers className="size-4" /> Provider IP</div>
-                <p className="text-sm text-muted-foreground">Model IP protected via isolated, measured runtimes and strict policies.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        
-
-        {/* Who We Are Section */}
-        <section className="w-full py-16 md:py-24 bg-muted/30">
-          <div className="container px-4 md:px-6 max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col items-start justify-center space-y-4 text-left mb-8"
-            >
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Who We Are</h2>
-              <p className="max-w-[900px] text-muted-foreground md:text-lg">
-                We’re a team of cryptography, secure‑systems, and AI engineers building confidential AI so
-                organizations can use sensitive data without compromise. Our approach blends modern cryptography with
-                practical product design—verifiable, privacy‑by‑default, and developer‑friendly.
-              </p>
-            </motion.div>
-
-            <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3">
-              {peopleData.people.map((p, i) => (
-                <motion.div
-                  key={p.name}
-                  initial={{ opacity: 0, y: 10 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.3, delay: i * 0.05 }}
-                >
-                  <div className="rounded-lg border bg-card p-6 text-center h-full flex flex-col items-center">
-                    <Image
-                      src={p.image}
-                      alt={p.name}
-                      width={128}
-                      height={128}
-                      className="mb-4 h-32 w-32 rounded-full object-cover ring-1 ring-border"
-                    />
-                    <h3 className="mt-4 text-base font-semibold">{p.name}</h3>
-                    <p className="mt-2 text-sm text-muted-foreground">{p.expertise}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            
-          </div>
-        </section>
-
-        {/* Use Cases Section */}
-        <section className="w-full py-16 md:py-24">
-          <div className="container px-4 md:px-6 max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4 }}
-              className="flex flex-col items-start justify-center space-y-4 text-left mb-10"
-            >
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Use Cases</h2>
-              <p className="max-w-[900px] text-muted-foreground md:text-lg">
-                From confidential inference to sensitive fine‑tuning and secure retrieval—choose the mechanism that fits
-                your workload. We support both TEE and FHE, just choose the one that fits your needs.
-              </p>
-            </motion.div>
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-lg border p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Zap className="size-4" /> LLM Inference</div>
-                <p className="text-sm text-muted-foreground">Run prompts over sensitive data without exposing plaintext to operators or providers.</p>
-              </div>
-              <div className="rounded-lg border p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Layers className="size-4" /> Fine‑Tuning</div>
-                <p className="text-sm text-muted-foreground">Adapt models with private datasets. Choose FHE/TEE/MPC based on security and throughput.</p>
-              </div>
-              <div className="rounded-lg border p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><BarChart className="size-4" /> Secure RAG/Analytics</div>
-                <p className="text-sm text-muted-foreground">Search and analyze encrypted corpora with confidential pipelines and clear audit trails.</p>
-              </div>
-              <div className="rounded-lg border p-5">
-                <div className="flex items-center gap-2 mb-2 text-sm font-medium text-primary"><Users className="size-4" /> Multi‑Party Collaboration</div>
-                <p className="text-sm text-muted-foreground">Compute across organizations without sharing raw data, preserving privacy and IP.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Features Section */}
-        <section id="features" className="w-full py-16 md:py-24">
-          <div className="container px-4 md:px-6 max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-start justify-center space-y-4 text-left mb-10"
-            >
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Key Benefits</h2>
-              <p className="max-w-[800px] text-muted-foreground md:text-lg">
-                A focused set of capabilities to keep your data protected while enabling powerful AI experiences.
-              </p>
-            </motion.div>
-
-            <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-              {features.map((feature, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.3, delay: i * 0.05 }}>
-                  <div className="flex flex-col">
-                    <div className="size-10 rounded-md bg-primary/10 flex items-center justify-center text-primary mb-3">
-                      {feature.icon}
-                    </div>
-                    <h3 className="text-xl font-bold mb-1">{feature.title}</h3>
-                    <p className="text-muted-foreground">{feature.description}</p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* How It Works Section */}
-        <section className="w-full py-20 md:py-32 bg-muted/30 relative overflow-hidden">
-          
-
-          <div className="container px-4 md:px-6 relative max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-center justify-center space-y-4 text-center mb-16"
-            >
-              <Badge className="rounded-full px-4 py-1.5 text-sm font-medium" variant="secondary">
-                How It Works
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">How Confidential AI Works</h2>
-              <p className="max-w-[800px] text-muted-foreground md:text-lg">
-                Data stays protected from end to end — encrypted client‑side and processed in cryptography‑backed environments.
-              </p>
-            </motion.div>
-
-            <div className="grid md:grid-cols-3 gap-8 md:gap-12 relative">
-              <div className="hidden md:block absolute top-1/2 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-border to-transparent -translate-y-1/2 z-0"></div>
-
-              {[
-                {
-                  step: "01",
-                  title: "Encrypt Client‑Side",
-                  description: "Your data is encrypted before it leaves your device. Keys remain under your control.",
-                },
-                {
-                  step: "02",
-                  title: "Process with Proof",
-                  description: "Data is processed in cryptography‑backed environments with attestations and auditability.",
-                },
-                {
-                  step: "03",
-                  title: "Deliver Results",
-                  description: "Only authorized outputs are returned with logs and evidence for governance.",
-                },
-              ].map((step, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.5, delay: i * 0.1 }}
-                  className="relative z-10 flex flex-col items-center text-center space-y-4"
-                >
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground text-xl font-bold shadow-lg">
-                    {step.step}
-                  </div>
-                  <h3 className="text-xl font-bold">{step.title}</h3>
-                  <p className="text-muted-foreground">{step.description}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        
-
-        {/* Pricing Section */}
-        <section id="pricing" className="w-full py-16 md:py-24 relative overflow-hidden">
-          <div className="container px-4 md:px-6 relative max-w-screen-xl">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-center justify-center space-y-4 text-center mb-12"
-            >
-              <Badge className="rounded-full px-4 py-1.5 text-sm font-medium" variant="secondary">
-                Pricing
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Simple, Transparent Pricing</h2>
-              <p className="max-w-[800px] text-muted-foreground md:text-lg">
-                Choose the plan that's right for your business.
-              </p>
-            </motion.div>
-
-            <div className="mx-auto max-w-3xl">
-              <Card className="overflow-hidden border-border/40 bg-gradient-to-b from-background to-muted/10 backdrop-blur">
-                <CardContent className="p-6 md:p-8">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-                    <div>
-                      <h3 className="text-2xl font-bold">Full Confidential AI Access</h3>
-                      <p className="text-muted-foreground mt-2">One plan, all features — simple and transparent.</p>
-                      <ul className="space-y-2 mt-4">
-                        <li className="flex items-center"><Check className="mr-2 size-4 text-primary" /> Secure, cryptography‑backed processing</li>
-                        <li className="flex items-center"><Check className="mr-2 size-4 text-primary" /> Confidential AI chat access</li>
-                        <li className="flex items-center"><Check className="mr-2 size-4 text-primary" /> Email support</li>
-                      </ul>
-                    </div>
-                    <div className="text-center md:text-right">
-                      <div className="text-4xl font-bold">$29<span className="text-lg align-top font-normal">/mo</span></div>
-                      <div className="mt-4 flex gap-3 justify-center md:justify-end">
-                        <Button className="rounded-full px-6" asChild>
-                          <Link href="/confidential-ai">Try Confidential AI</Link>
-                        </Button>
-                        <Button variant="outline" className="rounded-full px-6" asChild>
-                          <a href="mailto:contact@concrete-security.com">Contact Us</a>
-                        </Button>
+              <div className="flex flex-col gap-6 rounded-[32px] border border-black/15 bg-white/70 p-8 backdrop-blur-sm">
+                {heroHighlights.map((highlight) => {
+                  const Icon = highlight.icon
+                  return (
+                    <div key={highlight.title} className="flex flex-col gap-3">
+                      <div className="flex h-[29px] w-[29px] items-center justify-center rounded-md bg-[#1B0986]">
+                        <Icon className="h-4 w-4 text-white" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-sm font-semibold leading-5">{highlight.title}</p>
+                        <p className="text-sm leading-5 text-black/70">{highlight.description}</p>
                       </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ Section */}
-        <section id="faq" className="w-full py-20 md:py-32">
-          <div className="container px-4 md:px-6">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="flex flex-col items-center justify-center space-y-4 text-center mb-12"
-            >
-              <Badge className="rounded-full px-4 py-1.5 text-sm font-medium" variant="secondary">
-                FAQ
-              </Badge>
-              <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Frequently Asked Questions</h2>
-              <p className="max-w-[800px] text-muted-foreground md:text-lg">
-                Find answers to common questions about our platform.
-              </p>
-            </motion.div>
-
-            <div className="mx-auto max-w-3xl">
-              <Accordion type="single" collapsible className="w-full">
-                {[
-                  {
-                    question: "How do you keep my data confidential?",
-                    answer:
-                      "We use a combination of Trusted Execution Environments (TEE) and Fully Homomorphic Encryption (FHE) via a custom protocol. This ensures all data and code stay encrypted and attested so only authorized operations run without exposing your data.",
-                  },
-                  {
-                    question: "Can I change plans later?",
-                    answer:
-                      "Yes, you can upgrade or downgrade your plan at any time. If you upgrade, the new pricing will be prorated for the remainder of your billing cycle. If you downgrade, the new pricing will take effect at the start of your next billing cycle.",
-                  },
-                  {
-                    question: "Is there a limit to how many users I can add?",
-                    answer:
-                      "The number of users depends on your plan. The Starter plan allows up to 5 team members, the Professional plan allows up to 20, and the Enterprise plan has no limit on team members.",
-                  },
-                  {
-                    question: "Do you offer discounts for nonprofits or educational institutions?",
-                    answer:
-                      "Yes, we offer special pricing for nonprofits, educational institutions, and open-source projects. Please contact our sales team for more information.",
-                  },
-                  {
-                    question: "What kind of support do you offer?",
-                    answer:
-                      "Support varies by plan. All plans include email support, with the Professional plan offering priority email support. The Enterprise plan includes 24/7 phone and email support. We also have an extensive knowledge base and community forum available to all users.",
-                  },
-                ].map((faq, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3, delay: i * 0.05 }}
-                  >
-                    <AccordionItem value={`item-${i}`} className="border-b border-border/40 py-2">
-                      <AccordionTrigger className="text-left font-medium hover:no-underline">
-                        {faq.question}
-                      </AccordionTrigger>
-                      <AccordionContent className="text-muted-foreground">{faq.answer}</AccordionContent>
-                    </AccordionItem>
-                  </motion.div>
-                ))}
-              </Accordion>
-            </div>
-          </div>
-        </section>
-
-        
-      </main>
-      <footer className="w-full border-t bg-background/95 backdrop-blur-sm">
-        <div className="container flex flex-col gap-8 px-4 py-10 md:px-6 lg:py-16">
-          <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-4">
-            <div className="space-y-4">
-              <Link href="/" className="flex items-center gap-2 font-bold">
-                <Image src="/logo.png" alt="Concrete AI logo" width={28} height={28} className="rounded-sm" />
-                <span>Concrete AI</span>
-              </Link>
-              <p className="text-sm text-muted-foreground">
-                Confidential AI for sensitive data — backed by modern cryptography.
-              </p>
-              <div className="flex gap-4">
-                <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-5"
-                  >
-                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path>
-                  </svg>
-                  <span className="sr-only">Facebook</span>
-                </Link>
-                <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-5"
-                  >
-                    <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z"></path>
-                  </svg>
-                  <span className="sr-only">Twitter</span>
-                </Link>
-                <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-5"
-                  >
-                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
-                    <rect width="4" height="12" x="2" y="9"></rect>
-                    <circle cx="4" cy="4" r="2"></circle>
-                  </svg>
-                  <span className="sr-only">LinkedIn</span>
-                </Link>
+                  )
+                })}
               </div>
             </div>
-            <div className="space-y-4">
-              <h4 className="text-sm font-bold">Product</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <Link href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Features
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Pricing
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Integrations
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    API
-                  </Link>
-                </li>
-              </ul>
+          </div>
+        </section>
+
+        <section className="px-4 pb-20">
+          <div className="container flex flex-col gap-10">
+            <div className="max-w-[720px] space-y-4">
+              <span className="text-xs uppercase tracking-[0.4em] text-black/60">Capabilities</span>
+              <h2 className="text-[34px] font-semibold leading-[38px]">Confidential pipelines, delivered end to end.</h2>
+              <p className="text-base leading-6 text-black/70">
+                Compose cryptographic controls, regional guarantees, and developer tooling into a single secure fabric. We
+                design for regulated data, high-value IP, and multi-party collaboration without compromise.
+              </p>
             </div>
-            <div className="space-y-4">
-              <h4 className="text-sm font-bold">Resources</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Documentation
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Guides
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Blog
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Support
-                  </Link>
-                </li>
-              </ul>
-            </div>
-            <div className="space-y-4">
-              <h4 className="text-sm font-bold">Company</h4>
-              <ul className="space-y-2 text-sm">
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <a href="mailto:contact@concrete-security.com" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Contact Us
-                  </a>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Careers
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#" className="text-muted-foreground hover:text-foreground transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-              </ul>
+            <div className="grid gap-6 md:grid-cols-3">
+              {capabilityCards.map((card) => {
+                const Icon = card.icon
+                return (
+                  <div
+                    key={card.title}
+                    className="flex min-h-[204px] flex-col items-start gap-[17px] rounded-[32px] border border-black/12 bg-[#E2E2E2]/90 p-[30px] shadow-[0_24px_68px_-38px_rgba(0,0,0,0.55)]"
+                  >
+                    <div className="flex h-[29px] w-[29px] items-center justify-center rounded-md bg-[#1B0986]">
+                      <Icon className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold leading-6">{card.title}</h3>
+                      <p className="text-sm leading-6 text-black/70">{card.description}</p>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <div className="flex flex-col gap-4 sm:flex-row justify-between items-center border-t border-border/40 pt-8">
-            <p className="text-xs text-muted-foreground">
-              &copy; {new Date().getFullYear()} Concrete AI. All rights reserved.
-            </p>
-            <div className="flex gap-4">
-              <Link href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                Privacy Policy
-              </Link>
-              <Link href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                Terms of Service
-              </Link>
-              <Link href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-                Cookie Policy
-              </Link>
+        </section>
+
+        <section className="px-4 pb-24">
+          <div className="container flex flex-col gap-10">
+            <div className="max-w-[720px] space-y-4">
+              <span className="text-xs uppercase tracking-[0.4em] text-black/60">Trust Architecture</span>
+              <h2 className="text-[34px] font-semibold leading-[38px]">Engineered for verifiable confidentiality.</h2>
+              <p className="text-base leading-6 text-black/70">
+                Every layer reinforces the promise of privacy. Concrete AI blends hardware-backed attestation, encrypted
+                dataflows, and human-in-the-loop governance so you always know who touched what—and why.
+              </p>
             </div>
+            <div className="grid gap-6 md:grid-cols-3">
+              {trustSignals.map((signal) => {
+                const Icon = signal.icon
+                return (
+                  <div
+                    key={signal.title}
+                    className="flex flex-col gap-5 rounded-[32px] border border-black/12 bg-white/80 p-[30px] shadow-[0_24px_68px_-38px_rgba(0,0,0,0.55)] backdrop-blur-sm"
+                  >
+                    <div className="flex h-[48px] w-[48px] items-center justify-center rounded-full bg-[#1B0986] text-white">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-lg font-semibold leading-6">{signal.title}</h3>
+                      <p className="text-sm leading-6 text-black/70">{signal.description}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="flex justify-center px-4 pb-24">
+          <div className="relative w-full max-w-[880px] overflow-hidden rounded-[40px] border border-black/12 bg-[#1B0986] px-10 py-14 text-white shadow-[0_50px_120px_-45px_rgba(0,0,0,0.7)]">
+            <div
+              className="pointer-events-none absolute inset-0 bg-[linear-gradient(231.82deg,rgba(226,226,226,0.2)_8.09%,rgba(27,9,134,0.35)_105.85%)]"
+              aria-hidden
+            />
+            <div className="relative flex flex-col gap-6 text-center md:items-center">
+              <span className="text-xs uppercase tracking-[0.4em] text-white/70">Ready to build?</span>
+              <h2 className="text-[34px] font-semibold leading-[38px] md:max-w-[520px]">
+                Launch a confidential AI program that scales with your compliance and trust requirements.
+              </h2>
+              <p className="mx-auto max-w-[520px] text-sm leading-6 text-white/80">
+                Partner with our security engineers to deploy in your preferred region, integrate with existing data
+                controls, and evolve your policies alongside secure AI workloads.
+              </p>
+              <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <Button
+                  className="h-9 w-full rounded-full border border-white bg-white px-6 text-sm font-normal text-black hover:bg-white/90 sm:w-auto sm:min-w-[200px]"
+                  asChild
+                >
+                  <Link href="/confidential-ai">
+                    Start Secure Chat
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-9 w-full rounded-full border border-white/70 px-6 text-sm font-normal text-white hover:bg-white/10 sm:w-auto sm:min-w-[200px]"
+                  asChild
+                >
+                  <a href="mailto:contact@concrete-security.com">Schedule a briefing</a>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer className="relative z-10 border-t border-black/10 bg-[#E2E2E2]/70 backdrop-blur-sm">
+        <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-black/70 md:flex-row md:items-center md:justify-between">
+          <p>© {new Date().getFullYear()} Concrete AI. Confidential AI for sensitive data.</p>
+          <div className="flex flex-wrap gap-4">
+            <Link className="hover:text-black" href="/confidential-ai">
+              Confidential Chat
+            </Link>
+            <a className="hover:text-black" href="mailto:contact@concrete-security.com">
+              Contact
+            </a>
+            <Link className="hover:text-black" href="/">
+              Privacy Policy
+            </Link>
           </div>
         </div>
       </footer>
