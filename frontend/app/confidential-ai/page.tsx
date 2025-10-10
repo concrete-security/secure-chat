@@ -4,6 +4,7 @@ import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCall
 
 import Link from "next/link"
 import Image from "next/image"
+import { useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
 import { ArrowDown, Send, Lock, Shield, ShieldCheck, Cpu, CheckCircle2, Bot, Globe, Paperclip, FileText, X, Sparkles, ChevronDown, Key, Sun, Moon, Info } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -90,6 +91,9 @@ function truncateMiddle(str: string, maxLength: number = 40): string {
 }
 
 export default function ConfidentialAIPage() {
+  const searchParams = useSearchParams()
+  const initialMessage = searchParams.get("message")
+  
   const envProviderApiBase = normalize(confidentialChatConfig.providerApiBase)
   const envProviderModel = normalize(confidentialChatConfig.providerModel)
   const envProviderDisplayName = normalize(confidentialChatConfig.providerName) ?? envProviderModel
@@ -99,6 +103,7 @@ export default function ConfidentialAIPage() {
   const [configError, setConfigError] = useState<string | null>(null)
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false)
+  const [hasProcessedInitialMessage, setHasProcessedInitialMessage] = useState(false)
 
   const providerApiBase = normalize(providerBaseUrlInput)
   const providerModel = envProviderModel
@@ -206,7 +211,34 @@ export default function ConfidentialAIPage() {
       return [{ ...first, content: updatedGreeting }, ...rest]
     })
   }, [providerModel, assistantName, providerHost])
+  
   const [input, setInput] = useState("")
+
+  useEffect(() => {
+    if (initialMessage && !hasProcessedInitialMessage && providerApiBase) {
+      setInput(initialMessage)
+      setHasProcessedInitialMessage(true)
+      
+      try {
+        const storedFiles = sessionStorage.getItem("hero-uploaded-files")
+        if (storedFiles) {
+          const files = JSON.parse(storedFiles) as UploadedFile[]
+          setUploadedFiles(files)
+          sessionStorage.removeItem("hero-uploaded-files")
+        }
+      } catch (error) {
+        console.error("Failed to load hero files", error)
+      }
+      
+      setTimeout(() => {
+        const event = new Event("submit", { bubbles: true, cancelable: true })
+        const form = document.querySelector("form")
+        if (form) {
+          form.dispatchEvent(event)
+        }
+      }, 800)
+    }
+  }, [initialMessage, hasProcessedInitialMessage, providerApiBase])
   const [encrypting, setEncrypting] = useState(false)
   const [cipherPreview, setCipherPreview] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)

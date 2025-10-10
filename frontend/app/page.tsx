@@ -1,5 +1,9 @@
+"use client"
+
 import Link from "next/link"
 import Image from "next/image"
+import { useState, FormEvent, KeyboardEvent, useRef } from "react"
+import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   Shield,
@@ -11,27 +15,20 @@ import {
   FileLock2,
   Server,
   Sparkles,
+  Send,
+  FileText,
+  Paperclip,
+  X,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { LoadingTransition } from "@/components/loading-transition"
 import { ForceLightTheme } from "@/components/force-light-theme"
 
-const heroHighlights = [
-  {
-    title: "Confidential by Default",
-    description: "Attested enclaves seal prompts, parameters, and outputs so plaintext never leaves your control.",
-    icon: Shield,
-  },
-  {
-    title: "Policy-Driven Privacy",
-    description: "Granular roles, audit trails, and ephemeral tokens enforce zero-trust boundaries end to end.",
-    icon: Lock,
-  },
-  {
-    title: "Seamless Integration",
-    description: "Native support for secure RAG, fine-tuning, and analytics in existing MLOps pipelines.",
-    icon: Layers,
-  },
+const examplePrompts = [
+  "Analyze this employment contract for potential legal issues",
+  "Summarize key findings from these medical research documents",
+  "Review this financial report for compliance risks",
 ]
 
 const capabilityCards = [
@@ -72,10 +69,128 @@ const trustSignals = [
   },
 ]
 
+type UploadedFile = { name: string; content: string; size: number; type: string }
+
 export default function LandingPage() {
+  const router = useRouter()
+  const [input, setInput] = useState("")
+  const [isTransitioning, setIsTransitioning] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    const trimmed = input.trim()
+    if (!trimmed && uploadedFiles.length === 0) return
+
+    if (uploadedFiles.length > 0) {
+      try {
+        sessionStorage.setItem("hero-uploaded-files", JSON.stringify(uploadedFiles))
+      } catch (error) {
+        console.error("Failed to store files", error)
+      }
+    }
+
+    setIsTransitioning(true)
+    setTimeout(() => {
+      router.push(`/confidential-ai?message=${encodeURIComponent(trimmed)}`)
+    }, 1000)
+  }
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit(e as unknown as FormEvent)
+    }
+  }
+
+  const handleExampleClick = (example: string) => {
+    setInput(example)
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files) return
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+
+      const maxSize = 100 * 1024 * 1024
+      if (file.size > maxSize) {
+        alert(`File "${file.name}" is too large. Maximum size is 100MB.`)
+        continue
+      }
+
+      try {
+        let content: string
+
+        if (file.type === "application/pdf") {
+          content = await extractTextFromPDF(file)
+        } else {
+          content = await file.text()
+        }
+
+        const uploadedFile: UploadedFile = {
+          name: file.name,
+          content,
+          size: file.size,
+          type: file.type || "text/plain",
+        }
+
+        setUploadedFiles((prev) => [...prev, uploadedFile])
+      } catch (error) {
+        console.error("Error reading file:", error)
+        alert(`Failed to read file "${file.name}": ${error instanceof Error ? error.message : "Unknown error"}`)
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    try {
+      // @ts-expect-error - PDF.js is loaded from public folder
+      const pdfjsLibModule = await import(/* webpackIgnore: true */ "/pdfjs/pdf.mjs")
+      const pdfjsLib =
+        (pdfjsLibModule as unknown as { default?: unknown }).default ?? (window as any).pdfjsLib ?? pdfjsLibModule
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.mjs"
+
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let text = ""
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const textContent = await page.getTextContent()
+        const pageText = textContent.items.map((item: any) => ("str" in item ? item.str : "")).join(" ")
+        text += pageText + "\n"
+      }
+      return text.trim()
+    } catch (error) {
+      console.error("Error extracting text from PDF:", error)
+      throw new Error("Failed to extract text from PDF")
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const sizes = ["Bytes", "KB", "MB"]
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+  }
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#E2E2E2] text-black">
       <ForceLightTheme />
+      <script src="/pdfjs/pdf.mjs" type="module" />
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(93%_736.36%_at_38%_-100%,#E2E2E2_24.46%,#1B0986_100%)] opacity-25"
         aria-hidden
@@ -122,52 +237,146 @@ export default function LandingPage() {
               className="pointer-events-none absolute inset-0 bg-[linear-gradient(211.15deg,rgba(0,0,0,0)_18.84%,rgba(0,0,0,0.14)_103.94%)]"
               aria-hidden
             />
-            <div className="relative grid gap-12 px-8 md:grid-cols-[minmax(0,0.58fr)_minmax(0,0.42fr)] md:px-12">
-              <div className="flex flex-col gap-10">
-                <div className="space-y-6">
-                  <span className="inline-flex items-center rounded-full border border-black/50 px-4 py-1 text-xs font-medium uppercase tracking-[0.3em]">
-                    Concrete AI
+            <div className="relative flex flex-col items-center gap-8 px-8 md:px-12">
+              <div className="flex w-full max-w-2xl flex-col items-center gap-6 text-center">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#1B0986]/30 bg-[#1B0986]/5 px-4 py-1.5">
+                  <Lock className="h-3.5 w-3.5 text-[#1B0986]" />
+                  <span className="text-xs font-medium uppercase tracking-[0.3em] text-[#1B0986]">
+                    Secure Session
                   </span>
-                  <h1 className="text-[52px] font-bold leading-[55px]">Confidential AI at production scale.</h1>
-                  <p className="max-w-[389px] text-base leading-[22px]">
-                    Concrete AI delivers verifiable confidentiality so you can operationalize sensitive data with trusted
-                    AI. Every request inherits cryptographic proof, preserving privacy, compliance, and proprietary IP.
-                  </p>
                 </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button
-                    className="h-9 w-full rounded-full bg-black px-6 text-sm font-normal text-white hover:bg-black/90 sm:w-auto sm:min-w-[190px]"
-                    asChild
-                  >
-                    <Link href="/confidential-ai">
-                      Launch Console
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="h-9 w-full rounded-full border border-black px-6 text-sm font-normal text-black hover:bg-black/10 sm:w-auto sm:min-w-[190px]"
-                    asChild
-                  >
-                    <a href="mailto:contact@concrete-security.com">Talk to Security</a>
-                  </Button>
-                </div>
+                <h1 className="text-[48px] font-bold leading-[52px] md:text-[52px] md:leading-[55px]">
+                  Query confidential documents with AI
+                </h1>
+                <p className="max-w-[520px] text-base leading-[24px] text-black/70">
+                  Upload sensitive files and ask questions in a cryptographically secured environment. Every query is encrypted end-to-end with verifiable attestation.
+                </p>
               </div>
-              <div className="flex flex-col gap-6 rounded-[32px] border border-black/15 bg-white/70 p-8 backdrop-blur-sm">
-                {heroHighlights.map((highlight) => {
-                  const Icon = highlight.icon
-                  return (
-                    <div key={highlight.title} className="flex flex-col gap-3">
-                      <div className="flex h-[29px] w-[29px] items-center justify-center rounded-md bg-[#1B0986]">
-                        <Icon className="h-4 w-4 text-white" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-sm font-semibold leading-5">{highlight.title}</p>
-                        <p className="text-sm leading-5 text-black/70">{highlight.description}</p>
-                      </div>
+
+              <form onSubmit={handleSubmit} className="w-full max-w-2xl">
+                <div className="flex flex-col gap-4 rounded-[32px] border border-black/15 bg-white/70 p-6 shadow-[0_24px_68px_-38px_rgba(0,0,0,0.55)] backdrop-blur-sm">
+                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-black/60">
+                    <Shield className="h-3.5 w-3.5 text-[#1B0986]" />
+                    <span>End-to-end encrypted</span>
+                  </div>
+                  {uploadedFiles.length > 0 && (
+                    <div className="space-y-2">
+                      {uploadedFiles.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between rounded-xl border border-black/15 bg-white/70 p-3 text-xs text-black/70"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-3 text-[#1B0986]" />
+                            <span className="font-medium text-foreground">{file.name}</span>
+                            <span className="text-black/60">({formatFileSize(file.size)})</span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(index)}
+                            className="h-6 w-6 rounded-full border border-black/15 p-0 text-black hover:bg-white/80"
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      ))}
                     </div>
-                  )
-                })}
+                  )}
+                  <div className="flex w-full items-start gap-2">
+                    <div className="flex-1">
+                      <label htmlFor="hero-input" className="sr-only">
+                        Ask about your confidential documents
+                      </label>
+                      <textarea
+                        id="hero-input"
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        disabled={isTransitioning}
+                        placeholder="Ask about your confidential documents... (e.g., Analyze this employment contract)"
+                        className="h-[80px] w-full resize-none rounded-2xl border border-black/15 bg-white px-4 py-3.5 text-sm text-foreground placeholder:text-black/40 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1B0986]/50"
+                        rows={3}
+                      />
+                    </div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      multiple
+                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isTransitioning}
+                      className="h-[80px] w-[80px] shrink-0 rounded-2xl border border-black/15 bg-white/80 text-black hover:bg-white"
+                      title="Upload files"
+                    >
+                      <Paperclip className="h-5 w-5 text-[#1B0986]" />
+                    </Button>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="h-[80px] w-[80px] shrink-0 rounded-2xl bg-[#1B0986] text-white hover:bg-[#1B0986]/90 disabled:opacity-50"
+                      disabled={isTransitioning || (!input.trim() && uploadedFiles.length === 0)}
+                    >
+                      <Send className="h-6 w-6" />
+                      <span className="sr-only">Start secure session</span>
+                    </Button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-black/50">Try an example:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {examplePrompts.map((example, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleExampleClick(example)}
+                          disabled={isTransitioning}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-black/15 bg-white/60 px-3 py-1.5 text-xs text-black/70 transition hover:bg-white/80 hover:text-black disabled:opacity-50"
+                        >
+                          <FileText className="h-3 w-3" />
+                          {example}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </form>
+
+              <div className="grid w-full max-w-2xl gap-4 md:grid-cols-3">
+                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
+                    <Shield className="h-4 w-4 text-[#1B0986]" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold">Attested Execution</p>
+                    <p className="text-xs leading-relaxed text-black/60">Hardware-backed proofs verify every operation</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
+                    <Lock className="h-4 w-4 text-[#1B0986]" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold">Zero Knowledge</p>
+                    <p className="text-xs leading-relaxed text-black/60">Your data never leaves encrypted enclaves</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 rounded-2xl border border-black/10 bg-white/50 p-4">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]/10">
+                    <Sparkles className="h-4 w-4 text-[#1B0986]" />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-semibold">Production Ready</p>
+                    <p className="text-xs leading-relaxed text-black/60">Enterprise-grade infrastructure at scale</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -290,6 +499,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+      {isTransitioning && <LoadingTransition message="Opening secure session..." />}
     </div>
   )
 }
