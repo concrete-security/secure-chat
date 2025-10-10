@@ -371,7 +371,7 @@ function resolveProviderConfig(provider?: ConfidentialChatProviderConfig): Resol
   const baseUrl = normalizeBaseUrl(provider?.baseUrl ?? defaultProviderApiBase)
   const apiKey = optionalEnv(provider?.apiKey)
   const model = defaultModel
-  const systemPrompt = optionalEnv(provider?.systemPrompt) ?? defaultSystemPrompt
+  const resolvedSystemPrompt = optionalEnv(provider?.systemPrompt) ?? defaultSystemPrompt
   const temperature = defaultTemperature
   const maxTokens = defaultMaxTokens
 
@@ -379,7 +379,7 @@ function resolveProviderConfig(provider?: ConfidentialChatProviderConfig): Resol
     baseUrl,
     apiKey,
     model,
-    systemPrompt,
+    systemPrompt: resolvedSystemPrompt,
     temperature,
     maxTokens,
   }

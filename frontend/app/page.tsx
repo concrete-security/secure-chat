@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { ForceLightTheme } from "@/components/force-light-theme"
 
 const heroHighlights = [
   {
@@ -74,6 +75,7 @@ const trustSignals = [
 export default function LandingPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#E2E2E2] text-black">
+      <ForceLightTheme />
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(93%_736.36%_at_38%_-100%,#E2E2E2_24.46%,#1B0986_100%)] opacity-25"
         aria-hidden
