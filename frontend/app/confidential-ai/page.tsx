@@ -554,24 +554,57 @@ export default function ConfidentialAIPage() {
       const distanceFromBottom = Math.max(0, scrollHeight - (scrollTop + clientHeight))
       const tolerance = 24
       const isAtBottom = distanceFromBottom <= tolerance
+
+      // Detect user scrolling up (scrollTop decreased)
+      const previousScrollTop = lastScrollTopRef.current
+      const scrolledUp = scrollTop < previousScrollTop - 1 // 1px threshold for sensitive detection
+
       lastScrollTopRef.current = scrollTop
 
       setIsPinnedToBottom(isAtBottom)
+
       if (isAtBottom) {
+        // User scrolled back to bottom, re-enable auto-scroll
         setHasNewMessages(false)
         updateAutoScrollEnabled(true)
-      } else if (!isProgrammaticScrollRef.current) {
+      } else if (scrolledUp && !isProgrammaticScrollRef.current) {
+        // User actively scrolled up, disable auto-scroll
+        updateAutoScrollEnabled(false)
+      }
+      // Otherwise, don't change auto-scroll state (content added, programmatic scroll, etc.)
+    }
+
+    // Detect wheel events (mousewheel/trackpad) to immediately disable auto-scroll
+    const handleWheel = (e: WheelEvent) => {
+      // If user scrolls up (negative deltaY), immediately disable auto-scroll
+      if (e.deltaY < 0) {
+        updateAutoScrollEnabled(false)
+      }
+    }
+
+    // Detect touch start for mobile scrolling
+    const handleTouchStart = () => {
+      // When user starts touching to scroll, disable auto-scroll
+      // We'll re-enable if they scroll back to bottom (detected by handleScroll)
+      const { scrollTop, clientHeight, scrollHeight } = container
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+      // Only disable if not already at bottom
+      if (distanceFromBottom > 24) {
         updateAutoScrollEnabled(false)
       }
     }
 
     handleScroll()
     container.addEventListener("scroll", handleScroll, { passive: true })
+    container.addEventListener("wheel", handleWheel, { passive: true })
+    container.addEventListener("touchstart", handleTouchStart, { passive: true })
 
     return () => {
       container.removeEventListener("scroll", handleScroll)
+      container.removeEventListener("wheel", handleWheel)
+      container.removeEventListener("touchstart", handleTouchStart)
     }
-  }, [])
+  }, [updateAutoScrollEnabled])
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     isProgrammaticScrollRef.current = true
@@ -613,11 +646,20 @@ export default function ConfidentialAIPage() {
   )
 
   useEffect(() => {
-    if (!autoScrollEnabled) return
-    if (isPinnedToBottom) {
-      scrollToBottom("smooth")
-    }
-  }, [reasoningOpen, isPinnedToBottom, autoScrollEnabled, scrollToBottom])
+    // When reasoning panel is toggled, only scroll if auto-scroll is enabled and we're close to bottom
+    if (!autoScrollRef.current) return
+
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const { scrollTop, clientHeight, scrollHeight } = container
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+
+    // Only scroll if we're within reasonable distance of bottom (not if user scrolled far up)
+    if (distanceFromBottom > 100) return
+
+    scrollToBottom("smooth")
+  }, [reasoningOpen, scrollToBottom])
 
   const showScrollToLatest = !isPinnedToBottom && (!autoScrollEnabled || hasNewMessages)
 
