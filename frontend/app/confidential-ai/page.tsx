@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCallback } from "react"
+import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCallback, Suspense } from "react"
 
 import Link from "next/link"
 import Image from "next/image"
@@ -90,7 +90,7 @@ function truncateMiddle(str: string, maxLength: number = 40): string {
   return str.slice(0, frontChars) + ellipsis + str.slice(-backChars)
 }
 
-export default function ConfidentialAIPage() {
+function ConfidentialAIContent() {
   const searchParams = useSearchParams()
   const initialMessage = searchParams.get("message")
   
@@ -1201,5 +1201,20 @@ export default function ConfidentialAIPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+export default function ConfidentialAIPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[100dvh] items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1B0986] border-t-transparent mx-auto mb-4"></div>
+          <p className="text-sm text-muted-foreground">Loading confidential space...</p>
+        </div>
+      </div>
+    }>
+      <ConfidentialAIContent />
+    </Suspense>
   )
 }
