@@ -1,14 +1,17 @@
 "use client"
 
-import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCallback } from "react"
+import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCallback, Suspense } from "react"
 
 import Link from "next/link"
 import Image from "next/image"
+import { useSearchParams } from "next/navigation"
 import { useTheme } from "next-themes"
-import { ArrowDown, Send, Lock, Shield, ShieldCheck, Cpu, CheckCircle2, Bot, Globe, Paperclip, FileText, X, Sparkles, ChevronDown, Key } from "lucide-react"
+import { ArrowDown, Send, Lock, Shield, ShieldCheck, Cpu, CheckCircle2, Bot, Globe, Paperclip, FileText, X, Sparkles, ChevronDown, Key, Sun, Moon, Info } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
@@ -87,12 +90,10 @@ function truncateMiddle(str: string, maxLength: number = 40): string {
   return str.slice(0, frontChars) + ellipsis + str.slice(-backChars)
 }
 
-const THEME_OPTIONS = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-] as const
-
-export default function ConfidentialAIPage() {
+function ConfidentialAIContent() {
+  const searchParams = useSearchParams()
+  const initialMessage = searchParams.get("message")
+  
   const envProviderApiBase = normalize(confidentialChatConfig.providerApiBase)
   const envProviderModel = normalize(confidentialChatConfig.providerModel)
   const envProviderDisplayName = normalize(confidentialChatConfig.providerName) ?? envProviderModel
@@ -101,6 +102,8 @@ export default function ConfidentialAIPage() {
   const [providerApiKeyInput, setProviderApiKeyInput] = useState("")
   const [configError, setConfigError] = useState<string | null>(null)
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false)
+  const [hasProcessedInitialMessage, setHasProcessedInitialMessage] = useState(false)
 
   const providerApiBase = normalize(providerBaseUrlInput)
   const providerModel = envProviderModel
@@ -208,7 +211,34 @@ export default function ConfidentialAIPage() {
       return [{ ...first, content: updatedGreeting }, ...rest]
     })
   }, [providerModel, assistantName, providerHost])
+  
   const [input, setInput] = useState("")
+
+  useEffect(() => {
+    if (initialMessage && !hasProcessedInitialMessage && providerApiBase) {
+      setInput(initialMessage)
+      setHasProcessedInitialMessage(true)
+      
+      try {
+        const storedFiles = sessionStorage.getItem("hero-uploaded-files")
+        if (storedFiles) {
+          const files = JSON.parse(storedFiles) as UploadedFile[]
+          setUploadedFiles(files)
+          sessionStorage.removeItem("hero-uploaded-files")
+        }
+      } catch (error) {
+        console.error("Failed to load hero files", error)
+      }
+      
+      setTimeout(() => {
+        const event = new Event("submit", { bubbles: true, cancelable: true })
+        const form = document.querySelector("form")
+        if (form) {
+          form.dispatchEvent(event)
+        }
+      }, 800)
+    }
+  }, [initialMessage, hasProcessedInitialMessage, providerApiBase])
   const [encrypting, setEncrypting] = useState(false)
   const [cipherPreview, setCipherPreview] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
@@ -222,12 +252,18 @@ export default function ConfidentialAIPage() {
   const lastScrollTopRef = useRef(0)
   const isProgrammaticScrollRef = useRef(false)
 
-  // Track whether we should auto-scroll (only after sending/receiving a message)
-  const [shouldScroll, setShouldScroll] = useState(false)
+  // Scroll behavior state
   const [reasoningOpen, setReasoningOpen] = useState<Record<number, boolean>>({})
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true)
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true)
+  const autoScrollRef = useRef(autoScrollEnabled)
+
+  const updateAutoScrollEnabled = useCallback((value: boolean) => {
+    autoScrollRef.current = value
+    setAutoScrollEnabled(value)
+  }, [])
+
   const { theme: currentTheme, resolvedTheme, setTheme } = useTheme()
   const [themeReady, setThemeReady] = useState(false)
   const [cacheSalt, setCacheSalt] = useState<string | null>(null)
@@ -247,6 +283,9 @@ export default function ConfidentialAIPage() {
   }, [])
 
   const activeTheme = (currentTheme === "system" ? resolvedTheme : currentTheme) ?? "light"
+  const handleThemeToggle = () => {
+    setTheme(activeTheme === "dark" ? "light" : "dark")
+  }
   const isStreaming = useMemo(() => messages.some((message) => message.streaming), [messages])
 
 
@@ -405,8 +444,7 @@ export default function ConfidentialAIPage() {
     setUploadedFiles([])
     setIsSending(true)
 
-    // Trigger scroll only when a new message is sent by the user
-    setShouldScroll(true)
+    scrollToBottom("smooth")
 
     const sanitizedHistory = conversationBeforeAssistant.map((m) => ({ role: m.role, content: m.content }))
 
@@ -443,7 +481,7 @@ export default function ConfidentialAIPage() {
         if (chunk.type === "delta" && chunk.content) {
           streamedContent += chunk.content
           updateAssistantMessage({ content: streamedContent })
-          setShouldScroll(true)
+          handleStreamingFollow()
         }
 
         if (chunk.type === "reasoning_delta" && chunk.reasoning_content) {
@@ -477,7 +515,7 @@ export default function ConfidentialAIPage() {
         streaming: false,
         finishReason,
       })
-      setShouldScroll(true)
+      handleStreamingFollow("smooth")
     } catch (error) {
       console.warn("Confidential chat request failed", error)
       const fallback = error instanceof Error && error.message ? error.message : "Please try again later."
@@ -487,7 +525,7 @@ export default function ConfidentialAIPage() {
         reasoning_content: undefined,
         finishReason: undefined,
       })
-      setShouldScroll(true)
+      handleStreamingFollow("smooth")
     } finally {
       setIsSending(false)
       setEncrypting(false)
@@ -511,37 +549,62 @@ export default function ConfidentialAIPage() {
     const container = messagesContainerRef.current
     if (!container) return
 
-    const handleUserInteraction = () => {
-      if (!isProgrammaticScrollRef.current) {
-        setAutoScrollEnabled(false)
-      }
-    }
-
     const handleScroll = () => {
       const { scrollTop, clientHeight, scrollHeight } = container
       const distanceFromBottom = Math.max(0, scrollHeight - (scrollTop + clientHeight))
       const tolerance = 24
       const isAtBottom = distanceFromBottom <= tolerance
+
+      // Detect user scrolling up (scrollTop decreased)
+      const previousScrollTop = lastScrollTopRef.current
+      const scrolledUp = scrollTop < previousScrollTop - 1 // 1px threshold for sensitive detection
+
       lastScrollTopRef.current = scrollTop
 
       setIsPinnedToBottom(isAtBottom)
+
       if (isAtBottom) {
+        // User scrolled back to bottom, re-enable auto-scroll
         setHasNewMessages(false)
-        setAutoScrollEnabled(true)
+        updateAutoScrollEnabled(true)
+      } else if (scrolledUp && !isProgrammaticScrollRef.current) {
+        // User actively scrolled up, disable auto-scroll
+        updateAutoScrollEnabled(false)
+      }
+      // Otherwise, don't change auto-scroll state (content added, programmatic scroll, etc.)
+    }
+
+    // Detect wheel events (mousewheel/trackpad) to immediately disable auto-scroll
+    const handleWheel = (e: WheelEvent) => {
+      // If user scrolls up (negative deltaY), immediately disable auto-scroll
+      if (e.deltaY < 0) {
+        updateAutoScrollEnabled(false)
+      }
+    }
+
+    // Detect touch start for mobile scrolling
+    const handleTouchStart = () => {
+      // When user starts touching to scroll, disable auto-scroll
+      // We'll re-enable if they scroll back to bottom (detected by handleScroll)
+      const { scrollTop, clientHeight, scrollHeight } = container
+      const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+      // Only disable if not already at bottom
+      if (distanceFromBottom > 24) {
+        updateAutoScrollEnabled(false)
       }
     }
 
     handleScroll()
     container.addEventListener("scroll", handleScroll, { passive: true })
-    container.addEventListener("wheel", handleUserInteraction, { passive: true })
-    container.addEventListener("touchstart", handleUserInteraction, { passive: true })
-    
+    container.addEventListener("wheel", handleWheel, { passive: true })
+    container.addEventListener("touchstart", handleTouchStart, { passive: true })
+
     return () => {
       container.removeEventListener("scroll", handleScroll)
-      container.removeEventListener("wheel", handleUserInteraction)
-      container.removeEventListener("touchstart", handleUserInteraction)
+      container.removeEventListener("wheel", handleWheel)
+      container.removeEventListener("touchstart", handleTouchStart)
     }
-  }, [])
+  }, [updateAutoScrollEnabled])
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     isProgrammaticScrollRef.current = true
@@ -568,98 +631,110 @@ export default function ConfidentialAIPage() {
 
     setHasNewMessages(false)
     setIsPinnedToBottom(true)
-    setAutoScrollEnabled(true)
-  }, [])
+    updateAutoScrollEnabled(true)
+  }, [updateAutoScrollEnabled])
 
-  // Only auto-scroll when user is already viewing the newest messages
-  useEffect(() => {
-    if (!shouldScroll) return
-
-    if (autoScrollEnabled) {
-      const behavior: ScrollBehavior = messages.length <= 2 || isStreaming ? "auto" : "smooth"
-      scrollToBottom(behavior)
-    } else {
-      setHasNewMessages(true)
-    }
-
-    setShouldScroll(false)
-  }, [messages, shouldScroll, autoScrollEnabled, scrollToBottom, isStreaming])
+  const handleStreamingFollow = useCallback(
+    (behavior: ScrollBehavior = "auto") => {
+      if (autoScrollRef.current) {
+        scrollToBottom(behavior)
+      } else {
+        setHasNewMessages(true)
+      }
+    },
+    [scrollToBottom]
+  )
 
   useEffect(() => {
-    if (isPinnedToBottom || autoScrollEnabled) {
-      scrollToBottom("smooth")
-    }
-  }, [reasoningOpen, isPinnedToBottom, autoScrollEnabled, scrollToBottom])
+    // When reasoning panel is toggled, only scroll if auto-scroll is enabled and we're close to bottom
+    if (!autoScrollRef.current) return
+
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const { scrollTop, clientHeight, scrollHeight } = container
+    const distanceFromBottom = scrollHeight - (scrollTop + clientHeight)
+
+    // Only scroll if we're within reasonable distance of bottom (not if user scrolled far up)
+    if (distanceFromBottom > 100) return
+
+    scrollToBottom("smooth")
+  }, [reasoningOpen, scrollToBottom])
 
   const showScrollToLatest = !isPinnedToBottom && (!autoScrollEnabled || hasNewMessages)
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden bg-muted/20">
+    <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(93%_736.36%_at_38%_-100%,#E2E2E2_24.46%,#1B0986_100%)] opacity-[0.22] dark:bg-[radial-gradient(93%_736.36%_at_38%_-120%,rgba(46,27,142,0.35)_18.84%,rgba(6,5,45,0.92)_100%)]"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(211.15deg,rgba(0,0,0,0)_18.84%,rgba(0,0,0,0.16)_103.94%)] dark:bg-[linear-gradient(211.15deg,rgba(6,5,45,0)_18.84%,rgba(6,5,45,0.72)_103.94%)]"
+        aria-hidden="true"
+      />
       <script src="/pdfjs/pdf.mjs" type="module" />
-      <header className="border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shrink-0">
-        <div className="container flex h-14 items-center justify-between gap-3 px-4 md:px-6">
-          <div className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Lock className="size-4 text-primary" />
+      <header className="sticky top-0 z-20 border-b border-border/50 bg-background/85 backdrop-blur dark:bg-background/60">
+        <div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between gap-3 px-4 md:px-6">
+          <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.32em] text-muted-foreground">
+            <Lock className="h-4 w-4 text-[#1B0986]" />
             <span>Confidential Space</span>
           </div>
           <div className="flex items-center gap-3">
             {themeReady && (
-              <div className="flex items-center gap-1 rounded-full border border-border/60 bg-background/80 p-0.5 text-xs shadow-sm">
-                {THEME_OPTIONS.map((option) => {
-                  const isActive = activeTheme === option.value
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setTheme(option.value)}
-                      className={cn(
-                        "flex items-center gap-1 rounded-full px-3 py-1 capitalize transition",
-                        isActive
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  )
-                })}
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={handleThemeToggle}
+                className="rounded-full border border-border/40 bg-card/80 text-foreground transition hover:bg-card/90 dark:border-border/60 dark:bg-card/30 dark:hover:bg-card/40"
+              >
+                {activeTheme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
+                <span className="sr-only">Toggle theme</span>
+              </Button>
             )}
-            <Link href="/" className="inline-flex items-center gap-2 font-semibold">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 rounded-full border border-border/40 bg-card/80 px-3 py-1 text-sm font-semibold text-foreground shadow-sm transition hover:bg-card/90 dark:border-border/60 dark:bg-card/30 dark:text-foreground dark:hover:bg-card/40"
+            >
               <Image src="/logo.png" alt="Concrete AI logo" width={20} height={20} className="rounded-sm" />
-              <span>Confidential AI</span>
+              <span className="tracking-tight">Concrete AI</span>
             </Link>
           </div>
         </div>
       </header>
-      <main className="flex-1 flex flex-col min-h-0">
-        <div className="container flex-1 flex flex-col min-h-0 px-4 md:px-6 py-6 lg:py-10">
-          <div className="mx-auto flex max-w-7xl flex-1 flex-col min-h-0 gap-6 lg:gap-8" aria-label="Confidential space">
-            <div className="grid gap-6 flex-1 min-h-0 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2.2fr)] xl:grid-cols-[minmax(340px,1fr)_minmax(0,2.6fr)]">
-              <section className="relative flex flex-1 flex-col min-h-0 order-1 lg:order-2">
-                <div className="rounded-3xl bg-gradient-to-br from-primary/25 via-primary/45 to-primary/25 p-[1px] shadow-lg flex-1 flex flex-col min-h-0">
-                  <div className="flex flex-1 flex-col min-h-0 rounded-[calc(1.5rem-1px)] bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-4 text-xs font-medium uppercase tracking-wide text-muted-foreground shrink-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-primary">
-                          <Lock className="size-3.5" />
+      <main className="relative z-10 flex flex-1 flex-col min-h-0 overflow-hidden">
+        <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col min-h-0 px-4 pb-6 pt-4 md:px-6 md:pb-8 md:pt-6">
+          <div className="flex flex-1 flex-col min-h-0" aria-label="Confidential space">
+            <div className="flex flex-1 min-h-0">
+              <section className="relative flex w-full flex-1 flex-col min-h-0">
+                <div className="relative flex flex-1 flex-col overflow-hidden rounded-[36px] border border-border/50 bg-background/90 shadow-[0_60px_140px_-90px_rgba(0,0,0,0.7)] backdrop-blur dark:border-border/60 dark:bg-background/35">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/40 bg-card/80 px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground dark:bg-card/25">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setSessionDialogOpen(true)}
+                          className="inline-flex items-center gap-2 rounded-full bg-[#1B0986] px-4 py-1 text-white transition-all hover:bg-[#1B0986]/90 hover:scale-105 hover:ring-2 hover:ring-[#1B0986]/20 cursor-pointer"
+                        >
+                          <Lock className="h-3.5 w-3.5" />
                           Secure session
-                        </span>
-                        {encrypting && cipherPreview && (
-                          <>
-                            <span className="opacity-60">•</span>
-                            <span className="rounded-full bg-muted/60 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                              Encrypting {cipherPreview}
-                            </span>
-                          </>
-                        )}
+                        </button>
+                        <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[#1B0986] text-white ring-2 ring-white/80">
+                          <Info className="h-2.5 w-2.5" />
+                        </div>
                       </div>
-                      <div className="inline-flex items-center gap-2 rounded-full bg-muted/40 px-3 py-1 text-[11px] font-semibold text-muted-foreground">
-                        <Sparkles className="size-3.5 text-primary" />
-                        <span>{reasoningEffort.charAt(0).toUpperCase() + reasoningEffort.slice(1)} reasoning</span>
-                      </div>
+                      {encrypting && cipherPreview && (
+                        <>
+                          <span className="text-muted-foreground/60">•</span>
+                          <span className="rounded-full border border-border/40 bg-card/80 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.32em] text-muted-foreground dark:border-border/60 dark:bg-card/25">
+                            Encrypting {cipherPreview}
+                          </span>
+                        </>
+                      )}
                     </div>
-                    <Card className="flex flex-1 flex-col min-h-0 rounded-b-[1.4375rem] border-0 bg-background/60 shadow-none supports-[backdrop-filter]:bg-background/50 overflow-hidden">
+                  </div>
+                  <Card className="flex h-full flex-1 flex-col min-h-0 border-0 bg-transparent shadow-none">
                       <CardContent className="flex flex-1 flex-col min-h-0 p-0">
                         <div className="relative flex flex-1 flex-col min-h-0 overflow-hidden">
                           <div
@@ -697,10 +772,9 @@ export default function ConfidentialAIPage() {
                               const label = isUser ? "You" : assistantName
 
                               const bubbleClass = isUser
-                                ? "inline-block max-w-[65ch] whitespace-pre-wrap break-words rounded-2xl bg-primary px-4 py-3 text-left text-sm leading-6 text-primary-foreground shadow"
-                                : "w-full whitespace-pre-wrap break-words border-l-2 border-primary/40 pl-6 text-left text-sm leading-7 text-foreground"
+                                ? "inline-block max-w-[65ch] whitespace-pre-wrap break-words rounded-2xl bg-[#1B0986] px-4 py-3 text-left text-sm leading-6 text-white shadow-[0_20px_45px_-40px_rgba(0,0,0,0.8)] dark:shadow-[0_24px_55px_-35px_rgba(3,2,20,0.9)]"
+                                : "w-full whitespace-pre-wrap break-words rounded-2xl border border-border/50 bg-card/80 px-5 py-4 text-left text-sm leading-7 text-foreground shadow-sm backdrop-blur dark:border-border/60 dark:bg-card/25"
 
-                              const reasoningContainerClass = isUser ? "max-w-[65ch]" : "w-full"
                               const truncatedNoteClass = isUser ? "max-w-[65ch]" : "w-full"
 
                               const attachmentsContainerClass = cn(
@@ -727,17 +801,17 @@ export default function ConfidentialAIPage() {
                                           onClick={showReasoningPanel ? toggleReasoningPanel : undefined}
                                           disabled={!showReasoningPanel}
                                           className={cn(
-                                            "mt-1 flex size-8 items-center justify-center rounded-full bg-muted transition-all",
-                                            showReasoningPanel && "cursor-pointer hover:bg-primary/20 hover:ring-2 hover:ring-primary/30",
-                                            isReasoningOpen && "bg-primary/20 ring-2 ring-primary/40",
-                                            !showReasoningPanel && "cursor-default"
+                                            "mt-1 flex size-8 items-center justify-center rounded-full border border-border/40 bg-card/80 text-foreground transition-all dark:border-border/60 dark:bg-card/30",
+                                            showReasoningPanel && "cursor-pointer hover:bg-[#1B0986] hover:text-white",
+                                            isReasoningOpen && "bg-[#1B0986] text-white",
+                                            !showReasoningPanel && "cursor-default opacity-50"
                                           )}
                                           title={showReasoningPanel ? (isReasoningOpen ? "Hide reasoning" : "Show reasoning") : undefined}
                                         >
-                                          <Bot className={cn("size-5", isReasoningOpen ? "text-primary" : "text-muted-foreground")} />
+                                          <Bot className={cn("h-5 w-5", isReasoningOpen ? "text-white" : "text-muted-foreground")} />
                                           {showReasoningPanel && (
-                                            <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary">
-                                              <Sparkles className="size-2.5 text-primary-foreground" />
+                                            <div className="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-[#1B0986] text-white">
+                                              <Sparkles className="h-2.5 w-2.5" />
                                             </div>
                                           )}
                                         </button>
@@ -751,39 +825,39 @@ export default function ConfidentialAIPage() {
                                           : "flex-1 items-start text-left"
                                       )}
                                     >
-                                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+                                      <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                                         {label}
                                         {m.streaming && " · streaming"}
                                         {truncatedByLength && " · truncated"}
                                       </div>
-                                    {m.attachments && m.attachments.length > 0 && (
-                                      <div className={attachmentsContainerClass}>
-                                        {m.attachments.map((file, fileIndex) => (
-                                          <div
-                                            key={fileIndex}
-                                            className={cn(
-                                              "flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 p-2",
-                                              !isUser && "w-full"
-                                            )}
-                                          >
-                                            <FileText className="size-3 text-muted-foreground" />
-                                            <span className="font-medium">{file.name}</span>
-                                            <span>
-                                              ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                      {m.attachments && m.attachments.length > 0 && (
+                                        <div className={attachmentsContainerClass}>
+                                          {m.attachments.map((file, fileIndex) => (
+                                            <div
+                                              key={fileIndex}
+                                              className={cn(
+                                                "flex items-center gap-2 rounded-xl border border-border/40 bg-card/80 p-2 dark:border-border/60 dark:bg-card/25",
+                                                !isUser && "w-full"
+                                              )}
+                                            >
+                                              <FileText className="size-3 text-muted-foreground" />
+                                              <span className="font-medium text-foreground">{file.name}</span>
+                                              <span className="text-muted-foreground">
+                                                ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
+                                              </span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     <div
                                       className={bubbleClass}
                                     >
                                       <Markdown content={bubbleText} className="markdown-body text-sm" />
                                     </div>
                                     {showReasoningPanel && isReasoningOpen && (
-                                      <div className="w-full overflow-hidden rounded-xl border border-primary/25 bg-primary/5 animate-in fade-in slide-in-from-top-2 duration-300">
-                                        <div className="flex items-center gap-2 border-b border-primary/15 px-3 py-2 text-xs font-medium text-primary">
-                                          <Sparkles className="size-3.5" />
+                                      <div className="w-full overflow-hidden rounded-2xl border border-border/40 bg-card/80 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300 dark:border-border/60 dark:bg-card/20">
+                                        <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground dark:border-border/60">
+                                          <Sparkles className="h-3.5 w-3.5 text-[#1B0986]" />
                                           <span>{m.streaming ? "Thinking..." : "Reasoning"}</span>
                                         </div>
                                         <div className="px-3 py-3 text-xs text-muted-foreground">
@@ -801,7 +875,7 @@ export default function ConfidentialAIPage() {
                                       </div>
                                     )}
                                       {truncatedByLength && (
-                                        <div className={cn("text-[11px] text-muted-foreground/80", truncatedNoteClass)}>
+                                        <div className={cn("text-[11px] text-muted-foreground", truncatedNoteClass)}>
                                           Umbra paused because the API token limit was reached. Ask to continue for more detail.
                                         </div>
                                       )}
@@ -810,26 +884,31 @@ export default function ConfidentialAIPage() {
                                 </div>
                               )
                             })}
-                            <div ref={messagesEndRef} aria-hidden />
-                          </div>
-                          {showScrollToLatest && (
-                            <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={hasNewMessages ? "default" : "secondary"}
-                                className="pointer-events-auto gap-1 rounded-full px-3 py-1 text-xs shadow-md"
-                                onClick={() => scrollToBottom()}
-                              >
+                          <div ref={messagesEndRef} aria-hidden />
+                        </div>
+                        {showScrollToLatest && (
+                          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className={cn(
+                                "pointer-events-auto gap-1 rounded-full border border-border/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm transition dark:border-border/60",
+                                hasNewMessages
+                                  ? "bg-[#1B0986] text-white hover:bg-[#1B0986]/90"
+                                  : "bg-card/80 text-foreground hover:bg-card/90 dark:bg-card/30 dark:text-foreground dark:hover:bg-card/40"
+                              )}
+                              onClick={() => scrollToBottom()}
+                            >
                                 <ArrowDown className="size-4" />
                                 <span>{hasNewMessages ? "New reply" : "Scroll to latest"}</span>
                               </Button>
                             </div>
                           )}
                         </div>
-                        <form onSubmit={onSubmit} className="border-t border-border/60 bg-background px-5 py-4 sm:px-6 shrink-0">
-                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span className="uppercase tracking-wide text-[11px] text-muted-foreground/80">
+                        <form onSubmit={onSubmit} className="shrink-0 border-t border-border bg-card/80 px-6 py-5 dark:bg-card/25">
+                          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">
+                            <span>
                               Reasoning intensity
                             </span>
                             <div className="flex gap-1">
@@ -837,9 +916,14 @@ export default function ConfidentialAIPage() {
                                 <Button
                                   key={effort}
                                   type="button"
-                                  variant={reasoningEffort === effort ? "default" : "outline"}
+                                  variant="ghost"
                                   size="sm"
-                                  className="h-7 px-3 text-[11px] uppercase"
+                                  className={cn(
+                                    "h-8 rounded-full border px-4 text-[11px] uppercase tracking-[0.24em]",
+                                    reasoningEffort === effort
+                                      ? "border-[#1B0986] bg-[#1B0986] text-white hover:bg-[#1B0986]/90"
+                                      : "border-border/40 bg-card/70 text-muted-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-muted-foreground dark:hover:bg-card/30"
+                                  )}
                                   onClick={() => setReasoningEffort(effort as "low" | "medium" | "high")}
                                   disabled={isSending}
                                 >
@@ -853,11 +937,11 @@ export default function ConfidentialAIPage() {
                               {uploadedFiles.map((file, index) => (
                                 <div
                                   key={index}
-                                  className="flex items-center justify-between rounded-md border bg-muted/30 p-2 text-xs"
+                                  className="flex items-center justify-between rounded-xl border border-border/40 bg-card/80 p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <FileText className="size-3 text-muted-foreground" />
-                                    <span className="font-medium">{file.name}</span>
+                                    <FileText className="size-3 text-[#1B0986]" />
+                                    <span className="font-medium text-foreground">{file.name}</span>
                                     <span className="text-muted-foreground">
                                       ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
                                     </span>
@@ -867,7 +951,7 @@ export default function ConfidentialAIPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removeFile(index)}
-                                    className="h-6 w-6 p-0 hover:bg-destructive/10"
+                                    className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-border/60 dark:hover:bg-card/30"
                                   >
                                     <X className="size-3" />
                                   </Button>
@@ -890,7 +974,7 @@ export default function ConfidentialAIPage() {
                                 onKeyDown={onKeyDown}
                                 disabled={isSending}
                                 placeholder="Shift+Enter for a newline. Messages and attachments stay encrypted end-to-end."
-                                className="h-[60px] w-full resize-none rounded-2xl border bg-background px-4 py-3.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                className="h-[60px] w-full resize-none rounded-2xl border border-border/50 bg-card px-4 py-3.5 text-sm text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1B0986]/50 dark:border-border/60 dark:bg-card/15"
                                 rows={2}
                               />
                             </div>
@@ -908,208 +992,229 @@ export default function ConfidentialAIPage() {
                               size="icon"
                               onClick={() => fileInputRef.current?.click()}
                               disabled={isSending}
-                              className="rounded-xl h-[60px] w-[60px] shrink-0"
+                              className="h-[60px] w-[60px] shrink-0 rounded-xl border border-border/40 bg-card/80 text-foreground hover:bg-card/90 dark:border-border/60 dark:bg-card/20 dark:hover:bg-card/30"
                               title="Upload files"
                             >
-                              <Paperclip className="size-5" />
+                              <Paperclip className="h-5 w-5 text-[#1B0986]" />
                             </Button>
                             <Button
                               type="submit"
                               size="icon"
-                              className="rounded-xl h-[60px] w-[60px] shrink-0"
+                              className="h-[60px] w-[60px] shrink-0 rounded-xl bg-[#1B0986] text-white hover:bg-[#1B0986]/90"
                               disabled={isSending || (!input.trim() && uploadedFiles.length === 0) || !providerApiBase}
                             >
-                              <Send className="size-5" />
+                              <Send className="h-5 w-5" />
                               <span className="sr-only">Send secure message</span>
                             </Button>
                           </div>
                         </form>
                       </CardContent>
                     </Card>
-                  </div>
                 </div>
               </section>
-              <aside className="flex flex-col gap-4 order-2 lg:order-1">
-                <Card className="border-0 bg-background/60 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/50">
-                  <CardContent className="space-y-4 p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <h2 className="text-sm font-semibold">Session details</h2>
-                        <p className="text-xs text-muted-foreground mt-1">{connectionSummary}</p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 shrink-0 self-start rounded-full px-3 text-xs font-semibold uppercase tracking-wide"
-                        onClick={() => setShowAdvancedSettings((previous) => !previous)}
-                      >
-                        {showAdvancedSettings ? "Hide Advanced" : "Advanced"}
-                      </Button>
-                    </div>
-                    <div className="space-y-3 text-xs">
-                      {providerModel && (
-                        <div className="flex items-center gap-2">
-                          <Bot className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground">
-                            <span className="font-medium">Model:</span> {providerModel}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Bot className="size-4 text-muted-foreground/80" />
-                        <span className="text-muted-foreground">
-                          <span className="font-medium">Assistant:</span> {assistantName}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className={cn("size-4", providerConfigured ? "text-primary" : "text-muted-foreground/60")} />
-                        <span className="text-muted-foreground">
-                          <span className="font-medium">Base URL:</span>{" "}
-                          {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
-                        </span>
-                      </div>
-                      {providerHost && (
-                        <div className="flex items-center gap-2">
-                          <Globe className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground" title={providerHost}>
-                            <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Lock className="size-4 text-muted-foreground/80" />
-                        <span className="text-muted-foreground">
-                          <span className="font-medium">Bearer token:</span> {tokenPresent ? "Loaded in session" : "Not provided"}
-                        </span>
-                      </div>
-                      {cacheSalt && (
-                        <div className="flex items-center gap-2">
-                          <Key className="size-4 text-muted-foreground/80" />
-                          <span className="text-muted-foreground" title={cacheSalt}>
-                            <span className="font-medium">KV cache salt:</span>{" "}
-                            <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {showAdvancedSettings && (
-                      <div className="space-y-3 rounded-2xl border border-border/60 bg-background/70 p-4 text-xs">
-                        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80">
-                          Advanced provider settings
-                        </h3>
-                        <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
-                          <span className="font-medium">Base URL</span>
-                          <input
-                            id="provider-base-url"
-                            type="url"
-                            inputMode="url"
-                            autoComplete="off"
-                            spellCheck={false}
-                            placeholder="https://tee.example.com/v1"
-                            value={providerBaseUrlInput}
-                            onChange={(event) => setProviderBaseUrlInput(event.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </label>
-                        <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
-                          <span className="font-medium">Bearer token</span>
-                          <input
-                            id="provider-api-key"
-                            type="password"
-                            autoComplete="off"
-                            spellCheck={false}
-                            placeholder="token-..."
-                            value={providerApiKeyInput}
-                            onChange={(event) => setProviderApiKeyInput(event.target.value)}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                        </label>
-                        {configError && (
-                          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-                            {configError}
-                          </div>
-                        )}
-                        <p className="text-[11px] text-muted-foreground">
-                          Stored locally. Refreshing the page clears the token (session storage).
-                        </p>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-                <Card className="border-0 bg-background/60 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/50">
-                  <CardContent className="p-0">
-                    <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value="proofs" className="border-b-0">
-                        <AccordionTrigger className="px-5 py-4 text-sm font-medium hover:no-underline">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="size-4 text-primary" />
-                            <span>Proof of Confidentiality</span>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="space-y-3 px-5 pb-5 text-sm text-muted-foreground">
-                          <p>
-                            These attestations verify that your data is processed within a secure, isolated, and measured
-                            environment.
-                          </p>
-                          <div className="space-y-3">
-                            <div className="rounded-lg border bg-background p-3">
-                              <div className="flex items-center justify-between text-xs font-medium">
-                                <span className="inline-flex items-center gap-2">
-                                  <Cpu className="size-3.5" /> Intel TDX
-                                </span>
-                                <span className="inline-flex items-center gap-1 text-success">
-                                  <CheckCircle2 className="size-3.5" /> Verified
-                                </span>
-                              </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">quote: 0x9f…a3c</p>
-                            </div>
-                            <div className="rounded-lg border bg-background p-3">
-                              <div className="flex items-center justify-between text-xs font-medium">
-                                <span className="inline-flex items-center gap-2">
-                                  <Shield className="size-3.5" /> TLS Channel
-                                </span>
-                                <span className="inline-flex items-center gap-1 text-success">
-                                  <CheckCircle2 className="size-3.5" /> Verified
-                                </span>
-                              </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">
-                                tls: 1.3 · ECDHE-RSA · AES-256-GCM
-                              </p>
-                            </div>
-                            <div className="rounded-lg border bg-background p-3">
-                              <div className="flex items-center justify-between text-xs font-medium">
-                                <span className="inline-flex items-center gap-2">
-                                  <Cpu className="size-3.5" /> NVIDIA GPU
-                                </span>
-                                <span className="inline-flex items-center gap-1 text-success">
-                                  <CheckCircle2 className="size-3.5" /> Verified
-                                </span>
-                              </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">attest: device cert</p>
-                            </div>
-                            <div className="rounded-lg border bg-background p-3">
-                              <div className="flex items-center justify-between text-xs font-medium">
-                                <span className="inline-flex items-center gap-2">
-                                  <Lock className="size-3.5" /> Runtime
-                                </span>
-                                <span className="inline-flex items-center gap-1 text-success">
-                                  <CheckCircle2 className="size-3.5" /> Verified
-                                </span>
-                              </div>
-                              <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">policy: sha256:…</p>
-                            </div>
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </CardContent>
-                </Card>
-              </aside>
             </div>
           </div>
         </div>
       </main>
+      <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border border-border/50 bg-background/95 backdrop-blur dark:border-border/60 dark:bg-background/80">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
+              <Lock className="h-5 w-5 text-[#1B0986]" />
+              Secure Session
+            </DialogTitle>
+          </DialogHeader>
+          <Tabs defaultValue="session" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 gap-2 rounded-full border border-border/40 bg-card/80 p-1 dark:border-border/60 dark:bg-card/20">
+              <TabsTrigger
+                value="session"
+                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[#1B0986] data-[state=active]:text-white"
+              >
+                Session Details
+              </TabsTrigger>
+              <TabsTrigger
+                value="proof"
+                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[#1B0986] data-[state=active]:text-white"
+              >
+                Proof of Confidentiality
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="session" className="space-y-4 mt-4">
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{connectionSummary}</p>
+                <div className="space-y-3 text-xs">
+                  {providerModel && (
+                    <div className="flex items-center gap-2">
+                      <Bot className="size-4 text-[#1B0986]" />
+                      <span className="text-muted-foreground">
+                        <span className="font-medium">Model:</span> {providerModel}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Bot className="size-4 text-[#1B0986]" />
+                    <span className="text-muted-foreground">
+                      <span className="font-medium">Assistant:</span> {assistantName}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className={cn("size-4", providerConfigured ? "text-foreground" : "text-muted-foreground/50")} />
+                    <span className="text-muted-foreground">
+                      <span className="font-medium">Base URL:</span>{" "}
+                      {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
+                    </span>
+                  </div>
+                  {providerHost && (
+                    <div className="flex items-center gap-2">
+                      <Globe className="size-4 text-muted-foreground" />
+                      <span className="text-muted-foreground" title={providerHost}>
+                        <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <Lock className="size-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">
+                      <span className="font-medium">Bearer token:</span> {tokenPresent ? "Loaded in session" : "Not provided"}
+                    </span>
+                  </div>
+                  {cacheSalt && (
+                    <div className="flex items-center gap-2">
+                      <Key className="size-4 text-muted-foreground" />
+                      <span className="text-muted-foreground" title={cacheSalt}>
+                        <span className="font-medium">KV cache salt:</span>{" "}
+                        <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="pt-3">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
+                    onClick={() => setShowAdvancedSettings((previous) => !previous)}
+                  >
+                    {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
+                  </Button>
+                </div>
+                {showAdvancedSettings && (
+                  <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      Advanced provider settings
+                    </h3>
+                    <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
+                      <span className="font-medium text-foreground">Base URL</span>
+                      <input
+                        id="provider-base-url"
+                        type="url"
+                        inputMode="url"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="https://tee.example.com/v1"
+                        value={providerBaseUrlInput}
+                        onChange={(event) => setProviderBaseUrlInput(event.target.value)}
+                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#1B0986]/40 dark:border-border/60 dark:bg-card/15"
+                      />
+                    </label>
+                    <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
+                      <span className="font-medium text-foreground">Bearer token</span>
+                      <input
+                        id="provider-api-key"
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="token-..."
+                        value={providerApiKeyInput}
+                        onChange={(event) => setProviderApiKeyInput(event.target.value)}
+                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#1B0986]/40 dark:border-border/60 dark:bg-card/15"
+                      />
+                    </label>
+                    {configError && (
+                      <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                        {configError}
+                      </div>
+                    )}
+                    <p className="text-[11px] text-muted-foreground">
+                      Stored locally. Refreshing the page clears the token (session storage).
+                    </p>
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+            <TabsContent value="proof" className="space-y-3 mt-4">
+              <p className="text-sm text-muted-foreground">
+                These attestations verify that your data is processed within a secure, isolated, and measured
+                environment.
+              </p>
+              <div className="space-y-3">
+                <div className="rounded-lg border border-border/40 bg-card/80 p-3 dark:border-border/60 dark:bg-card/20">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Cpu className="size-3.5 text-muted-foreground" /> Intel TDX
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 className="size-3.5" /> Verified
+                    </span>
+                  </div>
+                  <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">quote: 0x9f…a3c</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-card/80 p-3 dark:border-border/60 dark:bg-card/20">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Shield className="size-3.5 text-muted-foreground" /> TLS Channel
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 className="size-3.5" /> Verified
+                    </span>
+                  </div>
+                  <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">
+                    tls: 1.3 · ECDHE-RSA · AES-256-GCM
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-card/80 p-3 dark:border-border/60 dark:bg-card/20">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Cpu className="size-3.5 text-muted-foreground" /> NVIDIA GPU
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 className="size-3.5" /> Verified
+                    </span>
+                  </div>
+                  <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">attest: device cert</p>
+                </div>
+                <div className="rounded-lg border border-border/40 bg-card/80 p-3 dark:border-border/60 dark:bg-card/20">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <Lock className="size-3.5 text-muted-foreground" /> Runtime
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-success">
+                      <CheckCircle2 className="size-3.5" /> Verified
+                    </span>
+                  </div>
+                  <p className="mt-1.5 break-all font-mono text-xs text-muted-foreground">policy: sha256:…</p>
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+export default function ConfidentialAIPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[100dvh] items-center justify-center">
+        <div className="text-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1B0986] border-t-transparent mx-auto mb-4"></div>
+          <p className="text-sm text-muted-foreground">Loading confidential space...</p>
+        </div>
+      </div>
+    }>
+      <ConfidentialAIContent />
+    </Suspense>
   )
 }
