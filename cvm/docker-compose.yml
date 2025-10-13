@@ -5,18 +5,18 @@ services:
     env_file:
         - .env_prod
     gpus: all
+    runtime: nvidia
     ports:
-      - "${PORT}:${PORT}"  # host:container port mapping
+      - "${PORT_PROVIDER}:${PORT_PROVIDER}"  # host:container port mapping
     ipc: host
     volumes:
       # - huggingface-cache:/root/.cache/huggingface
       - ./tee:/tee
       - /mnt/disk1/tee_models:/mnt/disk1/tee_models
       - /mnt/disk1/huggingface:/root/.cache/huggingface
-    runtime: nvidia
     command: >
       --host 0.0.0.0
-      --port ${PORT}
+      --port ${PORT_PROVIDER}
       --model ${MODEL_ID}
       --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
       --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION}

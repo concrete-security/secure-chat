@@ -3,7 +3,7 @@ SHELL := /bin/bash
 # Usage:
 #   make docker-run
 #   make docker-run cache=--no-cache
-cache ?=
+cache ?=--no-cache
 
 # Environment mode: dev | staging | prod
 MODE ?= prod

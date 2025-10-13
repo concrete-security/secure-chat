@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-CONTAINER_LIST=("vllm_container")
+# CONTAINER_LIST=("vllm_container" "proxy_vllm_container")
+
+CONTAINER_LIST=("proxy_vllm_container")
+
 MODE=${1:-"prod"}
 ENV_FILE=".env_${MODE}"
 
@@ -30,7 +33,7 @@ done
 
 # --- Restart containers via docker compose ---
 echo "🚀 Starting containers..."
-docker compose --env-file "$ENV_FILE" up -d --force-recreate
+docker compose --env-file "$ENV_FILE" up -d --force-recreate proxy_vllm_service
 
 # --- Show logs ---
 echo "📜 Showing live logs..."
