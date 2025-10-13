@@ -11,7 +11,7 @@ services:
     expose:
       - "8000"
     networks:
-      - internal
+      - vllm
     command: >
       --model openai/gpt-oss-120b
       --tensor-parallel-size 1
@@ -42,8 +42,7 @@ services:
         target: /etc/nginx/conf.d/default.conf
         mode: 0444
     networks:
-      - internal
-      - external
+      - vllm
     depends_on:
       cert-manager:
         condition: service_healthy
@@ -68,12 +67,8 @@ services:
     restart: unless-stopped
 
 networks:
-  internal:
+  vllm:
     driver: bridge
-    internal: true
-  external:
-    driver: bridge
-    internal: false
 
 volumes:
   # Used to store huggingface models
