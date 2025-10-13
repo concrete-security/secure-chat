@@ -1,32 +1,55 @@
 services:
-  vllm:
+  vllm_service:
     image: vllm/vllm-openai:latest
-    container_name: vllm
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
+    container_name: vllm_container
+    env_file:
+        - .env_prod
+    gpus: all
+    ports:
+      - "${PORT}:${PORT}"  # host:container port mapping
+    ipc: host
     volumes:
-      - huggingface-cache:/root/.cache/huggingface
+      # - huggingface-cache:/root/.cache/huggingface
+      - ./tee:/tee
+      - /mnt/disk1/tee_models:/mnt/disk1/tee_models
+      - /mnt/disk1/huggingface:/root/.cache/huggingface
     runtime: nvidia
-    # No external ports - internal access only
-    expose:
-      - "8000"
-    networks:
-      - vllm
     command: >
-      --model openai/gpt-oss-120b
-      --tensor-parallel-size 1
-      --gpu-memory-utilization 0.95
-      --max-model-len 131072
-      --max-num-seqs 8
-      --reasoning-parser openai_gptoss
-      --async-scheduling
-    restart: unless-stopped
+      --host 0.0.0.0
+      --port ${PORT}
+      --model ${MODEL_ID}
+      --tensor-parallel-size ${VLLM_TENSOR_PARALLEL_SIZE}
+      --gpu-memory-utilization ${VLLM_GPU_MEMORY_UTILIZATION}
+      --max-model-len ${VLLM_MAX_MODEL_LEN}
+      --max-num-seqs ${VLLM_MAX_NUM_SEQS}
+      --max-num-batched-tokens ${VLLM_MAX_NUM_BATCHED_TOKENS}
+      --download-dir ${MODEL_STORAGE_DIR}
+      --reasoning-parser ${VLLM_REASONING_PARSER}
     healthcheck:
       start_interval: 1h30m # Allow up to 90 minutes for initial model loading
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+    restart: unless-stopped
+
+  proxy_api_service:
+      build:
+        context: ./tee
+        dockerfile: Dockerfile.proxy_api
+      container_name: proxy_api_container
+      depends_on:
+        - vllm_service
+      environment:
+        - VLLM_BASE_URL=http://vllm_service:${PORT_PROVIDER} # internal Docker network URL, use service not container name
+      ports:
+        - "${PORT_PROXY_RAG}:${PORT_PROXY_RAG}"
+      volumes:
+        - ./tee:/app
+      command: >
+        sh -c "uvicorn proxy_app:app --host 0.0.0.0 --port $PORT_PROXY_RAG"
+
+      restart: unless-stopped
 
   # Nginx reverse proxy with HTTPS
   nginx:
