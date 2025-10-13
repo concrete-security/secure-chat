@@ -53,16 +53,17 @@ jobs:
           body-includes: '<!-- vercel-preview-url -->'
 
       - name: Add Preview URL to Summary
-        if: github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']
-        run: echo "Vercel Preview: ${{ steps.vercel_preview.outputs['preview-url'] }}" >> $GITHUB_STEP_SUMMARY
+        if: "github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']"
+        run: |
+          echo "Vercel Preview: ${{ steps.vercel_preview.outputs['preview-url'] }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Share Preview URL on PR
-        if: github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']
+        if: "github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']"
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          comment-id: ${{ steps.find_preview_comment.outputs.comment-id }}
+          comment-id: ${{ steps.find_preview_comment.outputs['comment-id'] }}
           edit-mode: replace
           body: |
             <!-- vercel-preview-url -->
@@ -74,7 +75,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          comment-id: ${{ steps.find_preview_comment.outputs.comment-id }}
+          comment-id: ${{ steps.find_preview_comment.outputs['comment-id'] }}
           edit-mode: replace
           body: |
             <!-- vercel-preview-url -->
