@@ -4,6 +4,11 @@
 
 name: Vercel Deploy
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 on:
   push:
     branches:
@@ -53,12 +58,12 @@ jobs:
           body-includes: '<!-- vercel-preview-url -->'
 
       - name: Add Preview URL to Summary
-        if: "github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']"
+        if: ${{ github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url'] }}
         run: |
           echo "Vercel Preview: ${{ steps.vercel_preview.outputs['preview-url'] }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Share Preview URL on PR
-        if: "github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url']"
+        if: ${{ github.event_name == 'pull_request' && steps.vercel_preview.outcome == 'success' && steps.vercel_preview.outputs['preview-url'] }}
         uses: peter-evans/create-or-update-comment@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
