@@ -41,6 +41,10 @@ for container in "${CONTAINER_LIST[@]}"; do
     fi
 done
 
+echo "🏗️  Building images ${SERVICE_LIST[*]}..."
+docker compose --env-file "$ENV_FILE" build "${SERVICE_LIST[@]}"
+
+
 # --- Restart containers via docker compose ---
 echo "🚀 Starting containers..."
 docker compose --env-file "$ENV_FILE" up -d --force-recreate "${SERVICE_LIST[@]}"

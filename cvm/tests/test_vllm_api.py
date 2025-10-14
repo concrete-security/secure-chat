@@ -1,7 +1,7 @@
 import os
 import requests
 
-PORT = os.getenv("PORT")
+PORT = os.getenv("PORT", '8000')
 BASE_URL = f"http://localhost:{PORT}"
 MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-oss-120b")
 
