@@ -57,7 +57,17 @@ tests:
 	@set -a && source $(ENV_FILE) && set +a && \
 	$(VENV)/bin/poetry run pytest -vvx
 
+.PHONY: docker-build
+docker-build:
+	@chmod +x ./cvm/docker/docker_build.sh
+	@cd cvm && bash ./docker/docker_build.sh $(MODE)
+
 .PHONY: docker-run
 docker-run:
 	@chmod +x ./cvm/docker/docker_run.sh
 	@cd cvm && bash ./docker/docker_run.sh $(MODE)
+
+.PHONY: docker-up
+docker-up:
+	@$(MAKE) docker-build MODE=$(MODE)
+	@$(MAKE) docker-run MODE=$(MODE)

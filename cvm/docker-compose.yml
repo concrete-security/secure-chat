@@ -27,7 +27,7 @@ services:
       --reasoning-parser ${VLLM_REASONING_PARSER}
     healthcheck:
       start_period: 1h30m # Allow up to 90 minutes for initial model loading
-      test: ["CMD", "curl", "-f", "http://localhost:${PORT}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT_PROVIDER}/health"]
       interval: 30s
       timeout: 10s
       retries: 3
