@@ -104,8 +104,6 @@ async def models():
 #     "user": "What is TEE?",
 #     "file": ""
 #   }' | jq -r '.choices[0].message.content'
-
-
 @app.post("/v1/chat/completions")
 async def chat(req: Request):
 

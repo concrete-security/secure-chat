@@ -5,7 +5,7 @@ services:
     env_file:
         - .env_prod
     gpus: all
-    runtime: nvidia
+    # runtime: nvidia
     ports:
       - "${PORT_PROVIDER}:${PORT_PROVIDER}"  # host:container port mapping
     ipc: host
@@ -26,7 +26,7 @@ services:
       --download-dir ${MODEL_STORAGE_DIR}
       --reasoning-parser ${VLLM_REASONING_PARSER}
     healthcheck:
-      start_interval: 1h30m # Allow up to 90 minutes for initial model loading
+      start_period: 1h30m # Allow up to 90 minutes for initial model loading
       test: ["CMD", "curl", "-f", "http://localhost:${PORT}/health"]
       interval: 30s
       timeout: 10s

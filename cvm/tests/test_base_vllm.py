@@ -6,7 +6,7 @@ BASE_URL = f"http://localhost:{PORT}"
 MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-oss-120b")
 
 
-def test_vllm_server_models():
+def test_base_vllm_endpoint_v1_models():
     """Test if the /v1/models endpoint returns a valid JSON response."""
     url = f"{BASE_URL}/v1/models"
     response = requests.get(url, timeout=5)
@@ -18,7 +18,7 @@ def test_vllm_server_models():
     assert MODEL_ID in model_ids, f"Model ID '{MODEL_ID}' not found in available models"
 
 
-def test_vllm_completions_basic():
+def test_base_vllm_endpoint_v1_completions():
     """Test if the model can handle a simple completion request."""
     url = f"{BASE_URL}/v1/completions"
     payload = {
