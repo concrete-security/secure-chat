@@ -35,14 +35,14 @@ setup:
 	@echo "- Checking for pyproject.toml..."
 	@if [ ! -f pyproject.toml ]; then \
 		echo "⚙️  pyproject.toml not found, creating a new one automatically..."; \
-		$(VENV)/bin/poetry init --no-interaction --name secure-chat --dependency pytest --dependency requests >/dev/null; \
+		$(VENV)/bin/poetry init --no-interaction --name secure-chat --dependency pytest --dependency requests --dependency prometheus-client >/dev/null; \
 		echo "✅ pyproject.toml created successfully."; \
 	else \
 		echo "✅ pyproject.toml already exists."; \
 	fi
 
 	@echo "- Installing project dependencies..."
-	@$(VENV)/bin/poetry install --no-root --quiet
+	@$(VENV)/bin/poetry install --no-root
 	@echo "✅ Setup complete!"
 
 .PHONY: tests

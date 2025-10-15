@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # # --- Monitoring of the API proxy ---
+  # - job_name: "proxy_api"
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["proxy_api_service:7000"]
+
+  # --- Monitoring of the Base VLLM service ---
+  - job_name: "base_vllm"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vllm_service:8000"]
+

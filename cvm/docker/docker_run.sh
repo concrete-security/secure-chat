@@ -2,13 +2,13 @@
 set -e
 
 MODE=${1:-"prod"}
-WITH_VLLM_PROXY=${2:-"false"}
+WITH_BASSE_VLLM=${2:-"false"}
 ENV_FILE=".env_${MODE}"
 
-SERVICE_LIST=("proxy_api_service")
-CONTAINER_LIST=("proxy_api_container")
+SERVICE_LIST=("proxy_api_service" "prometheus_service" "grafana_service")
+CONTAINER_LIST=("proxy_api_container" "prometheus_container" "grafana_container")
 
-if [[ "$WITH_VLLM_PROXY" == "true" ]]; then
+if [[ "$WITH_BASSE_VLLM" == "true" ]]; then
     CONTAINER_LIST+=("vllm_container")
     SERVICE_LIST+=("vllm_service")
 fi

@@ -51,6 +51,37 @@ services:
 
       restart: unless-stopped
 
+  prometheus_service:
+    image: prom/prometheus:latest
+    container_name: prometheus_contrainer
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      # - ${PWD}/prometheus.yaml:/etc/prometheus/prometheus.yml # mount Prometheus config file
+    ports:
+      - "9090:9090"
+
+  # docker inspect grafana_container --format '{{json .NetworkSettings.Ports}}' | jq
+  # sudo ss -ltnp | grep :4000 || lsof -i :4000
+  # docker ps --filter name=grafana_container
+  # docker logs grafana_container | grep -i "http server" -n
+  # curl -I http://localhost:4000
+  grafana_service:
+    image: grafana/grafana:latest
+    container_name: grafana_container
+    depends_on:
+      - prometheus_service
+    ports:
+      - "4000:4000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_HTTP_PORT=4000
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ../monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards
+
+    restart: unless-stopped
+
   # Nginx reverse proxy with HTTPS
   nginx:
     image: nginx
@@ -104,7 +135,7 @@ configs:
     content: |
       # Upstream for VLLM service
       upstream vllm_backend {
-          server vllm:8000;
+          server vllm_service:${PORT_PROVIDER};
       }
 
       # HTTP server for ACME challenges and redirect
