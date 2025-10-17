@@ -1,9 +1,29 @@
 #!/bin/bash
 set -e
 
+OS="$(uname -s)"
+
 MODE=${1:-"prod"}
-WITH_BASSE_VLLM=${2:-"false"}
+WITH_BASSE_VLLM=${2:-"true"}
 ENV_FILE=".env_${MODE}"
+
+# Load .env
+if [[ -f "$ENV_FILE" ]]; then
+  set -o allexport
+  source "$ENV_FILE"
+  set +o allexport
+fi
+
+if [ "$(uname)" = "Darwin" ]; then
+  export HOST_MODEL_STORAGE_DIR="$(pwd)/tee/models"
+  export HOST_HF_CACHE="$(pwd)/huggingface"
+  export CONTAINER_MODEL_STORAGE_DIR="/tee/models"
+  mkdir -p "${HOST_MODEL_STORAGE_DIR}" "${HOST_HF_CACHE}"
+fi
+
+echo "Using model storage dir: $HOST_MODEL_STORAGE_DIR"
+echo "Using container model storage dir: $CONTAINER_MODEL_STORAGE_DIR"
+echo "Using HF cache dir: $HOST_HF_CACHE"
 
 SERVICE_LIST=("proxy_api_service" "prometheus_service" "grafana_service")
 CONTAINER_LIST=("proxy_api_container" "prometheus_container" "grafana_container")
@@ -18,13 +38,6 @@ echo "Detected platform: $OSTYPE"
 echo "Env file: $ENV_FILE"
 echo "Containers to handle: ${CONTAINER_LIST[*]}"
 echo "Services to handle: ${SERVICE_LIST[*]}"
-
-# Load .env
-if [[ -f "$ENV_FILE" ]]; then
-    set -o allexport
-    source "$ENV_FILE"
-    set +o allexport
-fi
 
 # Stop / Remove existing containers
 echo "🛑 Shutting down running containers..."
