@@ -4,7 +4,7 @@ set -e
 OS="$(uname -s)"
 
 MODE=${1:-"prod"}
-WITH_BASSE_VLLM=${2:-"true"}
+WITH_BASSE_VLLM=${2:-"false"}
 ENV_FILE=".env_${MODE}"
 
 # Load .env
