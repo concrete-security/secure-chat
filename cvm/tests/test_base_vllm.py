@@ -4,7 +4,12 @@ import requests
 PORT = os.getenv("PORT", '8000')
 BASE_URL = f"http://localhost:{PORT}"
 MODEL_ID = os.getenv("MODEL_ID", "openai/gpt-oss-120b")
+METRICS_URL = f"{BASE_URL}/metrics"
 
+# curl -s http://localhost:8000/metrics | head -n 30
+def test_base_vllm_endpoint_metrics():
+    response = requests.get(f"{BASE_URL}/metrics", timeout=5)
+    assert response.status_code == 200, f"Expected `200`, got `{response.status_code}`"
 
 def test_base_vllm_endpoint_v1_models():
     """Test if the /v1/models endpoint returns a valid JSON response."""
