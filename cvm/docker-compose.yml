@@ -61,6 +61,8 @@ services:
   prometheus_service:
     image: prom/prometheus:latest
     container_name: prometheus_contrainer
+    depends_on:
+      - vllm_service
     # networks:
     #   - vllm
     volumes:
