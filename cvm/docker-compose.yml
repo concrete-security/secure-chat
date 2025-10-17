@@ -26,6 +26,7 @@ services:
       --max-num-batched-tokens ${VLLM_MAX_NUM_BATCHED_TOKENS}
       --download-dir ${HOST_MODEL_STORAGE_DIR}
       --reasoning-parser ${VLLM_REASONING_PARSER}
+    #--no-enable-prefix-caching
     healthcheck:
       start_period: 1h30m # Allow up to 90 minutes for initial model loading
       test: ["CMD", "curl", "-f", "http://localhost:${PORT_PROVIDER}/health"]

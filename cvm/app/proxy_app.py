@@ -109,7 +109,7 @@ async def chat(req: Request):
 
     dt_call2 = dt_file_reading = None
     global_t0 = perf_counter()
-    # expected : {"user": "...", "file": "..."}
+    # expected : {"user": "...", "file": "...", "user_id": "..."}
     try:
         data = await req.json()
     except Exception as e:
@@ -119,6 +119,10 @@ async def chat(req: Request):
     assert 'user' in data, '🛑 Bad request keys'
     assert 'file' in data, '🛑 Bad request keys'
     assert 'user_id' in data, '🛑 Bad request keys'
+    # TODO: check if the token is legit via supabase
+    # TODO: Check if vllm natively supports loggins
+    # TODO: One prefix cache per user
+
     user_text = data.get("user", "")
     file_text = data.get("file", "")
     user_id = data.get("user_id", "")
@@ -135,6 +139,7 @@ async def chat(req: Request):
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user",   "content": user_merged}
         ],
+        "extra_body": {"cache_salt": f"user:{user_id}"},
         "temperature": data.get("temperature", DEFAULT_TEMPERATURE),
         "max_tokens": data.get("max_tokens", DEFAULT_MAX_TOKENS),
     }
@@ -158,6 +163,7 @@ async def chat(req: Request):
             payload2 = {
                 "model": payload["model"],
                 "messages": [
+                    # TODO: avoid changing the vllm's behaviour
                     {"role": "system", "content": f'{CONF_SYSTEM_PROMPT}\n\nDocument:\n{corpus}'},
                     {"role": "user",   "content": user_merged},
                 ],
@@ -172,7 +178,6 @@ async def chat(req: Request):
 
     global_dt = perf_counter() - global_t0
     logger.info(f"[[Endpoint | /v1/chat/completions]] Total in {global_dt}s")
-
 
     benchmark_logger.append({
         "is_cvm": IS_CVM,
