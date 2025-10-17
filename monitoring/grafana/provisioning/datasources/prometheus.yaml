@@ -6,3 +6,4 @@ datasources:
     access: proxy
     url: http://prometheus_service:9090
     isDefault: true
+    editable: true

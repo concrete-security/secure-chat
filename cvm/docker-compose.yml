@@ -10,10 +10,11 @@ services:
       - "${PORT_PROVIDER}:${PORT_PROVIDER}"  # host:container port mapping
     ipc: host
     volumes:
-      # - huggingface-cache:/root/.cache/huggingface
-      - ./tee:/tee
-      - /mnt/disk1/tee_models:/mnt/disk1/tee_models
-      - /mnt/disk1/huggingface:/root/.cache/huggingface
+      - ./app:/app
+      - ${HOST_MODEL_STORAGE_DIR}:${CONTAINER_MODEL_STORAGE_DIR}
+      - ${HOST_HF_CACHE}:/root/.cache/huggingface
+    # networks:
+    #   - vllm
     command: >
       --host 0.0.0.0
       --port ${PORT_PROVIDER}
@@ -23,7 +24,7 @@ services:
       --max-model-len ${VLLM_MAX_MODEL_LEN}
       --max-num-seqs ${VLLM_MAX_NUM_SEQS}
       --max-num-batched-tokens ${VLLM_MAX_NUM_BATCHED_TOKENS}
-      --download-dir ${MODEL_STORAGE_DIR}
+      --download-dir ${HOST_MODEL_STORAGE_DIR}
       --reasoning-parser ${VLLM_REASONING_PARSER}
     healthcheck:
       start_period: 1h30m # Allow up to 90 minutes for initial model loading
@@ -35,39 +36,53 @@ services:
 
   proxy_api_service:
       build:
-        context: ./tee
+        context: ./app
         dockerfile: Dockerfile.proxy_api
       container_name: proxy_api_container
       depends_on:
         - vllm_service
+      # networks:
+      #   - vllm
       environment:
-        - VLLM_BASE_URL=http://vllm_service:${PORT_PROVIDER} # internal Docker network URL, use service not container name
+        - VLLM_BASE_URL=http://vllm_service:${PORT_PROVIDER}
       ports:
         - "${PORT_PROXY_RAG}:${PORT_PROXY_RAG}"
       volumes:
-        - ./tee:/app
+        - ./app:/app
       command: >
         sh -c "uvicorn proxy_app:app --host 0.0.0.0 --port $PORT_PROXY_RAG"
-
       restart: unless-stopped
 
+  # Test: prometheus_service
+  # curl http://localhost:9090/targets
+  # docker exec -it prometheus_contrainer wget -qO- http://vllm_service:8000/metrics
+  # docker exec -it prometheus_contrainer sh -c 'wget -qO- http://vllm_service:8000/metrics | head -n 10'
   prometheus_service:
     image: prom/prometheus:latest
     container_name: prometheus_contrainer
+    # networks:
+    #   - vllm
     volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      # - ${PWD}/prometheus.yaml:/etc/prometheus/prometheus.yml # mount Prometheus config file
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prom-data:/prometheus
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    restart: unless-stopped
 
-  # docker inspect grafana_container --format '{{json .NetworkSettings.Ports}}' | jq
-  # sudo ss -ltnp | grep :4000 || lsof -i :4000
-  # docker ps --filter name=grafana_container
-  # docker logs grafana_container | grep -i "http server" -n
-  # curl -I http://localhost:4000
+  # Test: grafana_service
+  # docker exec -it grafana_container sh
+  # ls -R /etc/grafana/provisioning
+  # docker logs grafana_container | grep -i 'provision' | head -n 2
+  # docker exec -it grafana_container sh -c 'wget -qO- http://prometheus_service:9090/-/ready'
   grafana_service:
     image: grafana/grafana:latest
     container_name: grafana_container
+    # networks:
+    #   - vllm
     depends_on:
       - prometheus_service
     ports:
@@ -76,10 +91,11 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_SERVER_HTTP_PORT=4000
+      - GF_SERVER_HTTP_ADDR=0.0.0.0
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/vllm.json
     volumes:
+      # Mount: dashboards and datasources
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
-      - ../monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards
-
     restart: unless-stopped
 
   # Nginx reverse proxy with HTTPS
@@ -95,8 +111,8 @@ services:
       - source: nginx-default-conf
         target: /etc/nginx/conf.d/default.conf
         mode: 0444
-    networks:
-      - vllm
+    # networks:
+    #   - vllm
     depends_on:
       cert-manager:
         condition: service_healthy
@@ -120,8 +136,10 @@ services:
       - /var/run/dstack.sock:/var/run/dstack.sock
     restart: unless-stopped
 
+# docker network inspect vllm --format '{{json .Containers}}' | jq .
 networks:
-  vllm:
+  default:
+    name: vllm
     driver: bridge
 
 volumes:
