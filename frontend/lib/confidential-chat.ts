@@ -24,6 +24,7 @@ export type ConfidentialChatProviderConfig = {
 export type ConfidentialChatOptions = {
   signal?: AbortSignal
   provider?: ConfidentialChatProviderConfig
+  fetchImpl?: typeof fetch
 }
 
 export type ConfidentialChatStreamChunk =
@@ -148,7 +149,8 @@ export async function* streamConfidentialChat(
   }
 
   try {
-    const response = await fetch(endpoint, {
+    const fetchFn = options.fetchImpl ?? fetch
+    const response = await fetchFn(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),

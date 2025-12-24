@@ -9,6 +9,11 @@ const nextConfig = {
       config.externals = Array.isArray(config.externals) ? config.externals : config.externals ? [config.externals] : []
       config.externals.push("tr46")
     }
+    // Enable WebAssembly support for RA-TLS WASM module
+    config.experiments = {
+      ...config.experiments,
+      asyncWebAssembly: true,
+    }
     return config
   },
   async headers() {
