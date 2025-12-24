@@ -3,7 +3,7 @@
 PORT ?= 3000
 FORM_TOKEN_SECRET ?= local-form-token
 
-.PHONY: help install dev dev-open open open-when-ready build start lint clean test
+.PHONY: help install dev dev-open open open-when-ready build start lint clean test test-ratls build-ratls-wasm
 
 help:
 	@echo "Make targets:"
@@ -15,6 +15,8 @@ help:
 	@echo "  make start         # Start production server on PORT=$(PORT)"
 	@echo "  make lint          # Run linter"
 	@echo "  make test          # Run unit + Playwright tests (used in CI)"
+	@echo "  make test-ratls    # Run RA-TLS integration tests with proxy"
+	@echo "  make build-ratls-wasm  # Build WASM from ratls repo (main branch)"
 	@echo "  make clean         # Remove .next build output"
 
 install:
@@ -63,3 +65,14 @@ test test-ci:
 
 clean:
 	rm -rf .next
+
+# Build WASM package from ratls repo (requires wasm-pack, Rust, LLVM)
+build-ratls-wasm:
+	@echo "Building RA-TLS WASM from github.com/concrete-security/ratls..."
+	./scripts/build-ratls-wasm.sh
+
+# Run RA-TLS integration tests with proxy
+# This builds the proxy, starts an echo server, and runs Playwright tests
+test-ratls:
+	@echo "Running RA-TLS integration tests..."
+	./scripts/test-ratls.sh

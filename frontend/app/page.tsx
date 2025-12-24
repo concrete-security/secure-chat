@@ -85,8 +85,6 @@ export default function LandingPage() {
   const loadingTimerRef = useRef<number | null>(null)
   const loadingTimeoutRef = useRef<number | null>(null)
 
-  const requestIdRef = useRef(0)
-
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     const trimmed = input.trim()

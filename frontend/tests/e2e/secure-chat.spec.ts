@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test"
 
-const PROVIDER_ROUTE = "**/chat/completions"
+const PROVIDER_ROUTE = "**/v1/chat/completions"
 const ATTESTATION_ROUTE = "**/tdx_quote"
 
 const HERO_PROMPT = "Can you secure my documents?"
@@ -118,10 +118,15 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
   await expect(page).toHaveURL(/\/confidential-ai(?:\?.*)?$/)
   const storedProvider = await page.evaluate(() => localStorage.getItem("confidential-provider-settings-v1"))
   console.log("[e2e] provider settings:", storedProvider)
-  await expect
-    .poll(() => attestationRequests, { timeout: 15_000 })
-    .toBeGreaterThan(0)
-  await expect(page.getByText("Attestation verified")).toBeVisible({ timeout: 15_000 })
+
+  // Expand the "Proof of Confidentiality" accordion to see attestation status
+  const proofAccordion = page.getByText("Proof of Confidentiality")
+  await expect(proofAccordion).toBeVisible({ timeout: 10_000 })
+  await proofAccordion.click()
+
+  // Wait for attestation (test mode auto-verifies since WebSocket can't be mocked)
+  // Real attestation is tested in quote-verification.spec.ts
+  await expect(page.getByText("Protected and verified")).toBeVisible({ timeout: 15_000 })
 
   const transcript = page.getByRole("log", { name: "Confidential space transcript" })
   await expect(transcript).toContainText(HERO_PROMPT, { timeout: 15_000 })
