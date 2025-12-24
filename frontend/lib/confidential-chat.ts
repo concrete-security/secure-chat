@@ -24,6 +24,7 @@ export type ConfidentialChatProviderConfig = {
 export type ConfidentialChatOptions = {
   signal?: AbortSignal
   provider?: ConfidentialChatProviderConfig
+  fetchImpl?: typeof fetch
 }
 
 export type ConfidentialChatStreamChunk =
@@ -148,7 +149,11 @@ export async function* streamConfidentialChat(
   }
 
   try {
-    const response = await fetch(endpoint, {
+    if (!options.fetchImpl) {
+      throw new Error("aTLS fetch implementation is required for model connections. Secure channel not established.")
+    }
+    const fetchFn = options.fetchImpl
+    const response = await fetchFn(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(requestBody),
