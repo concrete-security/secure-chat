@@ -37,6 +37,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
+import { AttestationOverlay } from "@/components/attestation-overlay"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
 import { getAttestationServiceBaseUrl, isTdxQuoteSuccess, fetchTdxQuoteWithFallback, type TdxQuoteSuccessResponse } from "@/lib/attestation"
 import { compareReportData, normalizeHex, verifyTdxQuoteWithFallback } from "@/lib/attestation-verifier"
@@ -422,6 +423,7 @@ function ConfidentialAIContent() {
   const [proofState, setProofState] = useState<ProofState>({ status: "idle" })
   const [verificationState, setVerificationState] = useState<VerificationState>({ status: "idle" })
   const [proofDetailsModalOpen, setProofDetailsModalOpen] = useState(false)
+  const [showAttestationOverlay, setShowAttestationOverlay] = useState(true)
   const proofAbortRef = useRef<AbortController | null>(null)
 
   const providerApiBase = normalize(providerBaseUrlInput)
@@ -1004,13 +1006,13 @@ function ConfidentialAIContent() {
 
     const checklistItems: Array<{ label: string; description: string; state: ChecklistState }> = [
       {
-        label: "Quote fetched",
-        description: connectionCopy,
+        label: "Server identity confirmed",
+        description: "Connected to a verified protected server",
         state: quoteState,
       },
       {
-        label: "Machine is secure",
-        description: "Attestation verified and secure",
+        label: "Hardware protection active",
+        description: "Your data is processed in a secure environment",
         state: machineSecureState,
       },
     ]
@@ -1064,13 +1066,13 @@ function ConfidentialAIContent() {
                 {verificationState.status === "idle" && (
                   <>
                     <Info className="h-4 w-4" />
-                    <span className="text-xs">Verification pending</span>
+                    <span className="text-xs">Checking security...</span>
                   </>
                 )}
                 {verificationState.status === "running" && (
                   <>
                     <Sparkles className="h-4 w-4 animate-pulse" />
-                    <span className="text-xs">Verifying attestation…</span>
+                    <span className="text-xs">Confirming protection…</span>
                   </>
                 )}
                 {verificationState.status === "error" && (
@@ -1084,17 +1086,17 @@ function ConfidentialAIContent() {
                     {isVerified && !verificationState.isOutOfDate ? (
                       <>
                         <Lock className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verified and secure</span>
+                        <span className="text-xs font-medium">Protected and verified</span>
                       </>
                     ) : isVerified && verificationState.isOutOfDate ? (
                       <>
                         <AlertTriangle className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verified (update recommended)</span>
+                        <span className="text-xs font-medium">Protected (update available)</span>
                       </>
                     ) : (
                       <>
                         <X className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verification failed</span>
+                        <span className="text-xs font-medium">Security check failed</span>
                       </>
                     )}
                   </>
@@ -1111,11 +1113,7 @@ function ConfidentialAIContent() {
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
-              Requesting quote for
-              <span className="ml-1 font-mono text-foreground">
-                {formatReportDataPreview(proofState.reportData)}
-              </span>
-              …
+              Requesting security proof…
             </div>
           )
         }
@@ -1150,7 +1148,7 @@ function ConfidentialAIContent() {
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
-              Preparing attestation challenge…
+              Preparing security verification…
             </div>
           )
       }
@@ -1165,7 +1163,8 @@ function ConfidentialAIContent() {
                 <Cpu className={cn("text-brand-primary", isCompact ? "h-4 w-4" : "h-5 w-5")} />
               </div>
               <div className="space-y-1">
-                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>Intel TDX Quote</p>
+                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>Security Proof</p>
+                <p className={cn("text-muted-foreground", isCompact ? "text-[10px]" : "text-xs")}>Hardware-verified protection</p>
               </div>
             </div>
             {statusBadge}
@@ -1174,7 +1173,7 @@ function ConfidentialAIContent() {
         </div>
         <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/15">
           <p className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground/80 mb-2">
-            Attestation checklist
+            What&apos;s verified
           </p>
           <div className="space-y-2">
             {checklistItems.map((item) => (
@@ -1188,6 +1187,32 @@ function ConfidentialAIContent() {
             ))}
           </div>
         </div>
+        {/* Machine info from runtime signals */}
+        {runtimeSignals.length > 0 && proofState.status === "ready" && (
+          <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/15">
+            <p className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground/80 mb-2">
+              Verified components
+            </p>
+            <div className="space-y-2">
+              {runtimeSignals.slice(0, isCompact ? 3 : 5).map((signal) => (
+                <div key={signal.label} className="flex items-start gap-2">
+                  <Key className="h-3 w-3 mt-0.5 text-brand-primary shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-foreground">{signal.label}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground truncate" title={signal.value}>
+                      {signal.value.length > 24 ? `${signal.value.slice(0, 12)}...${signal.value.slice(-12)}` : signal.value}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {runtimeSignals.length > (isCompact ? 3 : 5) && (
+                <p className="text-[10px] text-muted-foreground">
+                  +{runtimeSignals.length - (isCompact ? 3 : 5)} more verified
+                </p>
+              )}
+            </div>
+          </div>
+        )}
         {body}
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1973,6 +1998,14 @@ function ConfidentialAIContent() {
 
   return (
     <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-background">
+      {showAttestationOverlay && (
+        <AttestationOverlay
+          proofStatus={proofState.status}
+          verificationStatus={verificationState.status}
+          isVerified={quoteVerified}
+          onComplete={() => setShowAttestationOverlay(false)}
+        />
+      )}
       <main className="flex flex-1 flex-col min-h-0">
         <section className="relative flex h-full w-full flex-1 flex-col md:flex-row" aria-label="Confidential space">
           <aside
@@ -2029,7 +2062,7 @@ function ConfidentialAIContent() {
                     <div className="flex items-center gap-2">
                       <div className={cn("h-2 w-2 rounded-full animate-pulse", secureChannelReady ? "bg-emerald-500" : "bg-amber-500")} />
                       <span className={cn("text-xs font-medium", secureChannelReady ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400")}>
-                        {secureChannelReady ? "Secure Channel Active" : "Establishing Security..."}
+                        {secureChannelReady ? "Protected" : "Securing..."}
                       </span>
                     </div>
                     <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
@@ -2414,72 +2447,6 @@ function ConfidentialAIContent() {
                     </div>
                   </div>
                 )}
-                {(() => {
-                  const isAttestationLoading = proofState.status === "loading"
-                  const isVerificationRunning = verificationState.status === "running"
-                  const isInProgress = isAttestationLoading || isVerificationRunning
-                  const isVerified = secureChannelReady
-                  const hasFailed =
-                    proofState.status === "error" ||
-                    verificationState.status === "error" ||
-                    (verificationState.status === "success" && !quoteVerified)
-                  
-                  if (proofState.status === "unavailable" || proofState.status === "idle") {
-                    return null
-                  }
-
-                  const isOutOfDate = verificationState.status === "success" && verificationState.isOutOfDate
-                  
-                  return (
-                    <div
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium",
-                        isVerified && !isOutOfDate
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/5 dark:text-emerald-300"
-                          : isVerified && isOutOfDate
-                            ? "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                            : isInProgress
-                              ? "border-brand-primary/60 bg-brand-primary/10 text-brand-primary dark:border-brand-primary/40 dark:bg-brand-primary/5"
-                              : hasFailed
-                                ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:border-rose-400/40 dark:bg-rose-400/5 dark:text-rose-300"
-                                : "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                      )}
-                    >
-                      {isVerified && !isOutOfDate ? (
-                        <>
-                          <Lock className="h-4 w-4 shrink-0" />
-                          <span>Attestation verified</span>
-                        </>
-                      ) : isVerified && isOutOfDate ? (
-                        <>
-                          <AlertTriangle className="h-4 w-4 shrink-0" />
-                          <span>Secure channel verified (update recommended)</span>
-                        </>
-                      ) : isInProgress ? (
-                        <>
-                          <Sparkles className="h-4 w-4 shrink-0 animate-pulse" />
-                          <span>
-                            {isAttestationLoading && isVerificationRunning
-                              ? "Attesting and verifying…"
-                              : isAttestationLoading
-                                ? "Attesting enclave…"
-                                : "Verifying attestation…"}
-                          </span>
-                        </>
-                      ) : hasFailed ? (
-                        <>
-                          <X className="h-4 w-4 shrink-0" />
-                          <span className="truncate">Security verification failed</span>
-                        </>
-                      ) : (
-                        <>
-                          <Info className="h-4 w-4 shrink-0" />
-                          <span>Verification pending</span>
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
                     {uploadedFiles.map((file, index) => (
@@ -2508,61 +2475,124 @@ function ConfidentialAIContent() {
                   </div>
                 )}
 
-                <div className="flex w-full items-end gap-3">
-                  <div className="min-w-0 flex-1">
-                    <label htmlFor="secure-input" className="sr-only">
-                      Secure message input
-                    </label>
-                    <textarea
-                      id="secure-input"
-                      value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value)
-                      }}
-                      onKeyDown={onKeyDown}
-                      disabled={isSending || guestRestrictionActive}
-                      placeholder="Shift+Enter for a newline. Messages and attachments stay inside this secure workspace."
-                      className="min-h-[96px] w-full resize-none rounded-2xl border border-border/40 bg-white px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#102A8C]/45 dark:border-border/60 dark:bg-card/15 sm:min-h-[56px]"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="ml-auto flex h-[96px] shrink-0 flex-col items-stretch justify-end gap-2 sm:ml-0 sm:h-[56px] sm:flex-row sm:items-stretch sm:gap-3">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      multiple
-                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isSending || guestRestrictionActive}
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl border border-border/40 bg-white text-foreground transition hover:bg-white/90 dark:border-border/60 dark:bg-card/20 dark:hover:bg-card/30 sm:flex-none"
-                      title="Upload files"
+                {/* Input area with security indicator wrapper */}
+                {(() => {
+                  const isAttestationLoading = proofState.status === "loading"
+                  const isVerificationRunning = verificationState.status === "running"
+                  const isInProgress = isAttestationLoading || isVerificationRunning
+                  const isVerified = secureChannelReady
+                  const hasFailed =
+                    proofState.status === "error" ||
+                    verificationState.status === "error" ||
+                    (verificationState.status === "success" && !quoteVerified)
+                  const isOutOfDate = verificationState.status === "success" && verificationState.isOutOfDate
+                  const showSecurityState = proofState.status !== "unavailable" && proofState.status !== "idle"
+
+                  const tooltipText = isVerified && !isOutOfDate
+                    ? "Session secured with hardware protection"
+                    : isVerified && isOutOfDate
+                      ? "Secured (update available)"
+                      : isInProgress
+                        ? "Verifying security..."
+                        : hasFailed
+                          ? "Security check failed"
+                          : ""
+
+                  return (
+                    <div
+                      className={cn(
+                        "relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm transition-all dark:bg-card/30",
+                        showSecurityState && isVerified && !isOutOfDate
+                          ? "ring-2 ring-emerald-500/40"
+                          : showSecurityState && isVerified && isOutOfDate
+                            ? "ring-2 ring-amber-500/40"
+                            : showSecurityState && isInProgress
+                              ? "ring-2 ring-brand-primary/30"
+                              : showSecurityState && hasFailed
+                                ? "ring-2 ring-rose-500/40"
+                                : "ring-1 ring-border/40 dark:ring-border/60"
+                      )}
+                      title={tooltipText}
                     >
-                      <Paperclip className="h-5 w-5 text-brand-primary dark:text-foreground" />
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="icon"
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-white dark:text-foreground sm:flex-none"
-                      disabled={
-                        guestRestrictionActive ||
-                        isSending ||
-                        (!input.trim() && uploadedFiles.length === 0) ||
-                        !providerApiBase ||
-                        !secureChannelReady
-                      }
-                    >
-                      <Send className="h-5 w-5" />
-                      <span className="sr-only">Send secure message</span>
-                    </Button>
-                  </div>
-                </div>
+                      <label htmlFor="secure-input" className="sr-only">
+                        Secure message input
+                      </label>
+                      <textarea
+                        id="secure-input"
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value)
+                        }}
+                        onKeyDown={onKeyDown}
+                        disabled={isSending || guestRestrictionActive}
+                        placeholder="Type your message..."
+                        className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                        rows={1}
+                      />
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        multiple
+                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isSending || guestRestrictionActive}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+                        title="Upload files"
+                      >
+                        <Paperclip className="h-5 w-5" />
+                      </button>
+                      <Button
+                        type="submit"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-brand-primary"
+                        disabled={
+                          guestRestrictionActive ||
+                          isSending ||
+                          (!input.trim() && uploadedFiles.length === 0) ||
+                          !providerApiBase ||
+                          !secureChannelReady
+                        }
+                      >
+                        <Send className="h-4 w-4" />
+                        <span className="sr-only">Send secure message</span>
+                      </Button>
+                      {/* Security badge overlay */}
+                      {showSecurityState && (
+                        <div
+                          className={cn(
+                            "absolute -top-2 -right-2 flex items-center justify-center size-6 rounded-full border-2 border-white dark:border-background shadow-sm",
+                            isVerified && !isOutOfDate
+                              ? "bg-emerald-500"
+                              : isVerified && isOutOfDate
+                                ? "bg-amber-500"
+                                : isInProgress
+                                  ? "bg-brand-primary"
+                                  : hasFailed
+                                    ? "bg-rose-500"
+                                    : "bg-gray-400"
+                          )}
+                        >
+                          {isVerified && !isOutOfDate ? (
+                            <ShieldCheck className="h-3.5 w-3.5 text-white" />
+                          ) : isVerified && isOutOfDate ? (
+                            <AlertTriangle className="h-3 w-3 text-white" />
+                          ) : isInProgress ? (
+                            <Sparkles className="h-3 w-3 text-white animate-pulse" />
+                          ) : hasFailed ? (
+                            <X className="h-3 w-3 text-white" />
+                          ) : (
+                            <Circle className="h-3 w-3 text-white" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </form>
           </div>

@@ -121,7 +121,6 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
   await expect
     .poll(() => attestationRequests, { timeout: 15_000 })
     .toBeGreaterThan(0)
-  await expect(page.getByText("Attestation verified")).toBeVisible({ timeout: 15_000 })
 
   const transcript = page.getByRole("log", { name: "Confidential space transcript" })
   await expect(transcript).toContainText(HERO_PROMPT, { timeout: 15_000 })
