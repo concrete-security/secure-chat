@@ -38,7 +38,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
-import { createRatlsClient, getRatlsProxyUrl, deriveTargetHost, isRatlsConfigured, type RatlsAttestationResult } from "@/lib/ratls-client"
+import { createRatlsClient, getRatlsProxyUrl, deriveTargetHost, isRatlsConfigured, DEV_POLICY, type RatlsAttestationResult } from "@/lib/ratls-client"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -630,7 +630,7 @@ function ConfidentialAIContent() {
       let attestationResult: RatlsAttestationResult | null = null
 
       const ratlsFetch = await createRatlsClient(
-        { proxyUrl: ratlsProxyUrl, targetHost },
+        { proxyUrl: ratlsProxyUrl, targetHost, policy: DEV_POLICY },
         (att) => {
           attestationResult = att
           console.log("[RA-TLS] Attestation received:", att)
@@ -639,18 +639,12 @@ function ConfidentialAIContent() {
 
       ratlsFetchRef.current = ratlsFetch
 
-      // The attestation is received during the TLS handshake when the first request is made
-      // For now, we mark as connected and attestation will be available after first request
-      if (attestationResult) {
-        setRatlsState({ status: "connected", attestation: attestationResult })
-      } else {
-        // Connection created but attestation happens on first request
-        // Set a pending attestation state
-        setRatlsState({
-          status: "connected",
-          attestation: { trusted: true, teeType: "pending", tcbStatus: "pending" }
-        })
-      }
+      // Client created - attestation will be verified on each request
+      // For now, mark as "ready" - attestation shown after first request
+      setRatlsState({
+        status: "connected",
+        attestation: { trusted: true, teeType: "pending", tcbStatus: "pending" }
+      })
     } catch (error) {
       console.error("[RA-TLS] Connection failed:", error)
       setRatlsState({

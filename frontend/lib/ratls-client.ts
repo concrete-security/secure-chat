@@ -3,10 +3,6 @@
  *
  * Provides a typed wrapper around the ratls-wasm package for use in Next.js.
  * Handles WASM initialization with lazy loading and client-side only execution.
- *
- * TODO: Update import path when ratls-wasm is published to npm
- * Current: local path for development
- * Future: import from "@anthropic/ratls-wasm" or similar
  */
 
 export type RatlsAttestationResult = {
@@ -15,9 +11,41 @@ export type RatlsAttestationResult = {
   tcbStatus: string
 }
 
+/** Verification policy for RA-TLS connections */
+export type RatlsPolicy = {
+  type: "dstack_tdx"
+  /** Expected bootchain measurements (optional if disable_runtime_verification is true) */
+  expected_bootchain?: {
+    mrtd?: string
+    rtmr0?: string
+    rtmr1?: string
+    rtmr2?: string
+  }
+  /** Expected OS image hash (optional if disable_runtime_verification is true) */
+  os_image_hash?: string
+  /** App compose configuration (optional if disable_runtime_verification is true) */
+  app_compose?: {
+    docker_compose_file?: string
+    allowed_envs?: string[]
+  }
+  /** Allowed TCB status values */
+  allowed_tcb_status?: string[]
+  /** DEVELOPMENT ONLY: Skip bootchain/app_compose/os_image verification */
+  disable_runtime_verification?: boolean
+}
+
+/** Default development policy - ONLY USE FOR DEVELOPMENT/TESTING */
+export const DEV_POLICY: RatlsPolicy = {
+  type: "dstack_tdx",
+  disable_runtime_verification: true,
+  allowed_tcb_status: ["UpToDate", "SWHardeningNeeded", "OutOfDate"]
+}
+
 export type RatlsClientConfig = {
   proxyUrl: string
   targetHost: string
+  /** Verification policy (required) */
+  policy: RatlsPolicy
   serverName?: string
   defaultHeaders?: Record<string, string>
 }
@@ -27,6 +55,7 @@ type RatlsFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Resp
 type CreateRatlsFetchFn = (options: {
   proxyUrl: string
   targetHost: string
+  policy: RatlsPolicy
   serverName?: string
   defaultHeaders?: Record<string, string>
   onAttestation?: (attestation: RatlsAttestationResult) => void | Promise<void>
@@ -46,10 +75,7 @@ async function loadWasmModule(): Promise<CreateRatlsFetchFn> {
 
   wasmInitPromise = (async () => {
     // Dynamic import to prevent SSR issues
-    // Path will change when package is published to npm
-    const mod = await import("../ratls-wasm/ratls-fetch.js")
-    // The module re-exports init from ratls_wasm.js, and init is the default export there
-    // The createRatlsFetch function handles WASM initialization internally
+    const mod = await import("./ratls-wasm/ratls-fetch.js")
     return mod.createRatlsFetch as CreateRatlsFetchFn
   })()
 
@@ -59,8 +85,8 @@ async function loadWasmModule(): Promise<CreateRatlsFetchFn> {
 /**
  * Create an RA-TLS enabled fetch client.
  *
- * @param config - Configuration for the RA-TLS connection
- * @param onAttestation - Optional callback invoked when attestation is received
+ * @param config - Configuration for the RA-TLS connection (including policy)
+ * @param onAttestation - Optional callback invoked when attestation is received (only on new connections)
  * @returns A fetch-compatible function that performs RA-TLS handshake
  */
 export async function createRatlsClient(
@@ -72,6 +98,7 @@ export async function createRatlsClient(
   return createRatlsFetch({
     proxyUrl: config.proxyUrl,
     targetHost: config.targetHost,
+    policy: config.policy,
     serverName: config.serverName,
     defaultHeaders: config.defaultHeaders,
     onAttestation,

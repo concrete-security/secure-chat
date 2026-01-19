@@ -3,7 +3,3 @@ node_modules/
 .env.*
 next-env.d.ts
 test-results/
-
-# RA-TLS WASM package (copied from ratls/wasm/pkg for build)
-# This will be replaced with an npm package import when published
-ratls-wasm/

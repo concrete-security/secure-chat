@@ -13,7 +13,7 @@
     "test:e2e": "playwright test",
     "test:unit": "vitest run",
     "test:ratls": "playwright test ratls-integration",
-    "copy-wasm": "rm -rf ratls-wasm && cp -r ../ratls/wasm/pkg ratls-wasm"
+    "build:ratls-wasm": "./scripts/build-ratls-wasm.sh"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
