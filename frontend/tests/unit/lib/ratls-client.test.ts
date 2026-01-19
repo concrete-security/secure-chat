@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest"
 
 // Mock the WASM module before importing the client
-vi.mock("@/ratls-wasm/ratls-fetch.js", () => ({
+vi.mock("@/lib/ratls-wasm/ratls-fetch.js", () => ({
   createRatlsFetch: vi.fn(() => vi.fn()),
 }))
 

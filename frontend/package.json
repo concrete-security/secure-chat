@@ -12,7 +12,6 @@
     "start": "next start",
     "test:e2e": "playwright test",
     "test:unit": "vitest run",
-    "test:ratls": "playwright test ratls-integration",
     "build:ratls-wasm": "./scripts/build-ratls-wasm.sh"
   },
   "dependencies": {

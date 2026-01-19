@@ -675,8 +675,8 @@ function ConfidentialAIContent() {
 
     const targetHost = providerApiBase ? deriveTargetHost(providerApiBase) : null
     const connectionCopy = targetHost
-      ? `RA-TLS connection to ${targetHost}.`
-      : "Configure a provider URL to establish RA-TLS connection."
+      ? `Secure connection to ${targetHost}.`
+      : "Configure a provider URL to establish secure connection."
 
     const statusBadge = (() => {
       switch (ratlsState.status) {
@@ -725,15 +725,15 @@ function ConfidentialAIContent() {
 
     const checklistItems: Array<{ label: string; description: string; state: ChecklistState }> = [
       {
-        label: "RA-TLS connected",
+        label: "Server identity confirmed",
         description: connectionCopy,
         state: connectionState,
       },
       {
-        label: "TEE attestation verified",
+        label: "Hardware protection active",
         description: ratlsState.status === "connected"
           ? `${ratlsState.attestation.teeType} - ${ratlsState.attestation.tcbStatus}`
-          : "Attestation verification pending",
+          : "Verifying secure environment...",
         state: attestationState,
       },
     ]
@@ -768,12 +768,12 @@ function ConfidentialAIContent() {
                 {isVerified ? (
                   <>
                     <Lock className="h-4 w-4" />
-                    <span className="text-xs font-medium">TEE attestation verified</span>
+                    <span className="text-xs font-medium">Protected and verified</span>
                   </>
                 ) : (
                   <>
                     <X className="h-4 w-4" />
-                    <span className="text-xs font-medium">Attestation not trusted</span>
+                    <span className="text-xs font-medium">Security check failed</span>
                   </>
                 )}
               </div>
@@ -789,7 +789,7 @@ function ConfidentialAIContent() {
               )}
             >
               <Sparkles className="h-4 w-4 inline-block mr-2 animate-pulse" />
-              Establishing RA-TLS connection…
+              Verifying server security...
             </div>
           )
         case "error":
@@ -823,7 +823,8 @@ function ConfidentialAIContent() {
                 <ShieldCheck className={cn("text-brand-primary", isCompact ? "h-4 w-4" : "h-5 w-5")} />
               </div>
               <div className="space-y-1">
-                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>RA-TLS Attestation</p>
+                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>Security Proof</p>
+                <p className={cn("text-muted-foreground", isCompact ? "text-[10px]" : "text-xs")}>Hardware-verified protection</p>
               </div>
             </div>
             {statusBadge}
@@ -832,7 +833,7 @@ function ConfidentialAIContent() {
         </div>
         <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/15">
           <p className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground/80 mb-2">
-            Attestation checklist
+            Security checklist
           </p>
           <div className="space-y-2">
             {checklistItems.map((item) => (
@@ -887,7 +888,7 @@ function ConfidentialAIContent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <ShieldCheck className="h-5 w-5 text-brand-primary" />
-              Attestation Details
+              Security Details
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
@@ -905,15 +906,15 @@ function ConfidentialAIContent() {
                   <>
                     <X className="h-4 w-4 text-rose-600" />
                     <span className="text-sm font-medium text-rose-600">
-                      Attestation not trusted
+                      Security verification failed
                     </span>
                   </>
                 )}
               </div>
               <p className="mt-2 text-xs text-muted-foreground">
                 The connection to <span className="font-mono">{targetHost}</span> has been attested and verified
-                using Attested TLS (RA-TLS). The server&apos;s TLS certificate is cryptographically bound to the
-                TEE measurements below, proving the exact code running in the secure enclave.
+                using Attested TLS. The server&apos;s certificate is cryptographically bound to the
+                hardware measurements below, proving the exact code running in the secure enclave.
               </p>
             </div>
 
@@ -1834,9 +1835,9 @@ function ConfidentialAIContent() {
                         <div className="space-y-2">
                            <h3 className="font-semibold text-foreground">Welcome to Confidential AI</h3>
                            <p className="text-sm text-muted-foreground leading-relaxed max-w-lg">
-                              This chat session is end-to-end encrypted and processed inside a secure enclave (TEE). 
-                              Your data remains confidential even from the cloud provider. 
-                              Verify the "Attestation" status in the sidebar to ensure system integrity.
+                              This chat session is end-to-end encrypted. 
+                              Your data remains confidential. 
+                              Verify the Attestation status to have more information on system integrity.
                            </p>
                         </div>
                      </div>
@@ -2025,52 +2026,6 @@ function ConfidentialAIContent() {
               className="shrink-0 border-t border-border/40 bg-white/95 px-4 py-4 shadow-inner dark:bg-card/25"
             >
                <div className="mx-auto w-full space-y-4">
-                {(() => {
-                  const isConnecting = ratlsState.status === "connecting"
-                  const isVerified = secureChannelReady
-                  const hasFailed = ratlsState.status === "error"
-
-                  if (ratlsState.status === "disconnected") {
-                    return null
-                  }
-
-                  return (
-                    <div
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium",
-                        isVerified
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/5 dark:text-emerald-300"
-                          : isConnecting
-                            ? "border-brand-primary/60 bg-brand-primary/10 text-brand-primary dark:border-brand-primary/40 dark:bg-brand-primary/5"
-                            : hasFailed
-                              ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:border-rose-400/40 dark:bg-rose-400/5 dark:text-rose-300"
-                              : "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                      )}
-                    >
-                      {isVerified ? (
-                        <>
-                          <Lock className="h-4 w-4 shrink-0" />
-                          <span>RA-TLS attestation verified</span>
-                        </>
-                      ) : isConnecting ? (
-                        <>
-                          <Sparkles className="h-4 w-4 shrink-0 animate-pulse" />
-                          <span>Establishing RA-TLS connection…</span>
-                        </>
-                      ) : hasFailed ? (
-                        <>
-                          <X className="h-4 w-4 shrink-0" />
-                          <span className="truncate">RA-TLS connection failed</span>
-                        </>
-                      ) : (
-                        <>
-                          <Info className="h-4 w-4 shrink-0" />
-                          <span>Connection pending</span>
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
                 {uploadedFiles.length > 0 && (
                   <div className="space-y-2">
                     {uploadedFiles.map((file, index) => (
@@ -2099,61 +2054,110 @@ function ConfidentialAIContent() {
                   </div>
                 )}
 
-                <div className="flex w-full items-end gap-3">
-                  <div className="min-w-0 flex-1">
-                    <label htmlFor="secure-input" className="sr-only">
-                      Secure message input
-                    </label>
-                    <textarea
-                      id="secure-input"
-                      value={input}
-                      onChange={(e) => {
-                        setInput(e.target.value)
-                      }}
-                      onKeyDown={onKeyDown}
-                      disabled={isSending || guestRestrictionActive}
-                      placeholder="Shift+Enter for a newline. Messages and attachments stay inside this secure workspace."
-                      className="min-h-[96px] w-full resize-none rounded-2xl border border-border/40 bg-white px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#102A8C]/45 dark:border-border/60 dark:bg-card/15 sm:min-h-[56px]"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="ml-auto flex h-[96px] shrink-0 flex-col items-stretch justify-end gap-2 sm:ml-0 sm:h-[56px] sm:flex-row sm:items-stretch sm:gap-3">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      multiple
-                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                      className="hidden"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isSending || guestRestrictionActive}
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl border border-border/40 bg-white text-foreground transition hover:bg-white/90 dark:border-border/60 dark:bg-card/20 dark:hover:bg-card/30 sm:flex-none"
-                      title="Upload files"
+                {/* Input area with security indicator wrapper */}
+                {(() => {
+                  const isConnecting = ratlsState.status === "connecting"
+                  const isVerified = secureChannelReady
+                  const hasFailed = ratlsState.status === "error"
+                  const showSecurityState = ratlsState.status !== "disconnected"
+
+                  const tooltipText = isVerified
+                    ? "Session secured with hardware protection"
+                    : isConnecting
+                      ? "Verifying security..."
+                      : hasFailed
+                        ? "Security check failed"
+                        : ""
+
+                  return (
+                    <div
+                      className={cn(
+                        "relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm transition-all dark:bg-card/30",
+                        showSecurityState && isVerified
+                          ? "ring-2 ring-emerald-500/40"
+                          : showSecurityState && isConnecting
+                            ? "ring-2 ring-brand-primary/30"
+                            : showSecurityState && hasFailed
+                              ? "ring-2 ring-rose-500/40"
+                              : "ring-1 ring-border/40 dark:ring-border/60"
+                      )}
+                      title={tooltipText}
                     >
-                      <Paperclip className="h-5 w-5 text-brand-primary dark:text-foreground" />
-                    </Button>
-                    <Button
-                      type="submit"
-                      size="icon"
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-white dark:text-foreground sm:flex-none"
-                      disabled={
-                        guestRestrictionActive ||
-                        isSending ||
-                        (!input.trim() && uploadedFiles.length === 0) ||
-                        !providerApiBase ||
-                        !secureChannelReady
-                      }
-                    >
-                      <Send className="h-5 w-5" />
-                      <span className="sr-only">Send secure message</span>
-                    </Button>
-                  </div>
-                </div>
+                      <label htmlFor="secure-input" className="sr-only">
+                        Secure message input
+                      </label>
+                      <textarea
+                        id="secure-input"
+                        value={input}
+                        onChange={(e) => {
+                          setInput(e.target.value)
+                        }}
+                        onKeyDown={onKeyDown}
+                        disabled={isSending || guestRestrictionActive}
+                        placeholder="Type your message..."
+                        className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                        rows={1}
+                      />
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        multiple
+                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isSending || guestRestrictionActive}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+                        title="Upload files"
+                      >
+                        <Paperclip className="h-5 w-5" />
+                      </button>
+                      <Button
+                        type="submit"
+                        size="icon"
+                        className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-brand-primary"
+                        disabled={
+                          guestRestrictionActive ||
+                          isSending ||
+                          (!input.trim() && uploadedFiles.length === 0) ||
+                          !providerApiBase ||
+                          !secureChannelReady
+                        }
+                      >
+                        <Send className="h-4 w-4" />
+                        <span className="sr-only">Send secure message</span>
+                      </Button>
+                      {/* Security badge overlay */}
+                      {showSecurityState && (
+                        <div
+                          className={cn(
+                            "absolute -top-2 -right-2 flex items-center justify-center size-6 rounded-full border-2 border-white dark:border-background shadow-sm",
+                            isVerified
+                              ? "bg-emerald-500"
+                              : isConnecting
+                                ? "bg-brand-primary"
+                                : hasFailed
+                                  ? "bg-rose-500"
+                                  : "bg-gray-400"
+                          )}
+                        >
+                          {isVerified ? (
+                            <ShieldCheck className="h-3.5 w-3.5 text-white" />
+                          ) : isConnecting ? (
+                            <Sparkles className="h-3 w-3 text-white animate-pulse" />
+                          ) : hasFailed ? (
+                            <X className="h-3 w-3 text-white" />
+                          ) : (
+                            <Circle className="h-3 w-3 text-white" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </form>
           </div>
@@ -2291,8 +2295,8 @@ function ConfidentialAIContent() {
             <TabsContent value="proof" className="space-y-4 mt-4">
               <p className="text-sm text-muted-foreground">
                 {providerApiBase
-                  ? `RA-TLS connection to ${deriveTargetHost(providerApiBase)} via WebSocket proxy.`
-                  : "Configure a provider URL to establish RA-TLS connection."}
+                  ? `Secure connection to ${deriveTargetHost(providerApiBase)}.`
+                  : "Configure a provider URL to establish secure connection."}
               </p>
               <RatlsProofContent
                 variant="dialog"
