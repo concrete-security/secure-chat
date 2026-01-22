@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useRef, useState } from "react"
+import { FormEvent, useCallback, useRef, useState } from "react"
 import { MessageSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -25,13 +25,39 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
   const honeypotRef = useRef<HTMLInputElement | null>(null)
-  const { token: formToken, loading: formTokenLoading, error: formTokenError, refreshToken } = useFormToken()
+  const {
+    token: formToken,
+    loading: formTokenLoading,
+    error: formTokenError,
+    refreshToken,
+    isTokenExpiredOrExpiring,
+  } = useFormToken()
 
   const resetForm = () => {
     setForm(initialFormState)
     setStatus("idle")
     setError(null)
   }
+
+  const submitFeedback = useCallback(
+    async (token: string, checkpointValue: string): Promise<Response> => {
+      return fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          message: form.message,
+          source,
+          form_token: token,
+          checkpoint: checkpointValue || undefined,
+        }),
+      })
+    },
+    [form.email, form.message, form.name, source]
+  )
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -43,34 +69,42 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
       return
     }
 
-    if (!formToken) {
-      setError("Secure form token unavailable. Please try again.")
-      void refreshToken()
-      return
+    // If token is missing or expired, get a fresh one before submitting
+    let tokenToUse = formToken
+    if (!tokenToUse || isTokenExpiredOrExpiring()) {
+      const freshToken = await refreshToken()
+      if (!freshToken) {
+        setError("Secure form token unavailable. Please try again.")
+        return
+      }
+      tokenToUse = freshToken
     }
 
     setStatus("loading")
     setError(null)
 
     try {
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          message: form.message,
-          source,
-          form_token: formToken,
-          checkpoint: checkpointValue || undefined,
-        }),
-      })
+      let response = await submitFeedback(tokenToUse, checkpointValue)
 
+      // If token expired during submission, retry once with a fresh token
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
-        throw new Error(payload?.error ?? "Unable to send feedback right now.")
+        const errorMessage = payload?.error ?? ""
+
+        if (errorMessage.toLowerCase().includes("expired")) {
+          const freshToken = await refreshToken()
+          if (freshToken) {
+            response = await submitFeedback(freshToken, checkpointValue)
+            if (!response.ok) {
+              const retryPayload = await response.json().catch(() => null)
+              throw new Error(retryPayload?.error ?? "Unable to send feedback right now.")
+            }
+          } else {
+            throw new Error("Unable to refresh security token. Please try again.")
+          }
+        } else {
+          throw new Error(errorMessage || "Unable to send feedback right now.")
+        }
       }
 
       setStatus("success")
@@ -87,6 +121,10 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)
+    if (nextOpen && isTokenExpiredOrExpiring()) {
+      // Refresh token when dialog opens if it's expired or expiring soon
+      void refreshToken()
+    }
     if (!nextOpen && status === "success") {
       resetForm()
     }

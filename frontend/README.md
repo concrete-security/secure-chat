@@ -6,8 +6,11 @@ Umbra is Concrete Security's marketing site and secure workspace for routing sen
 
 ### Landing page (`app/page.tsx`)
 - Hero prompt + attachment form stores the initial context in `sessionStorage` so the confidential workspace can replay it.
-- People carousel, trust badges, and the security flow diagram highlight team credibility.
+- Trust badges and the security flow diagram highlight platform credibility.
 - Waitlist CTA and floating `FeedbackButton` submit through `/api/waitlist` and `/api/feedback`, reusing the same anti-bot protections as the auth surface.
+
+### Team page (`app/team/page.tsx`)
+- Displays the team members and advisory board with links to LinkedIn profiles.
 
 ### Confidential AI workspace (`app/confidential-ai/page.tsx`)
 - Streaming chat client with reasoning panel, cache salt input, file uploads (text + PDFs via `public/pdfjs`/`workers/pdf.worker.ts`), and transcript controls.
@@ -159,6 +162,8 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
    - `getRatlsProxyUrl()` - Returns the configured proxy URL from `NEXT_PUBLIC_RATLS_PROXY_URL`
    - `deriveTargetHost(baseUrl)` - Extracts host:port from provider URL
    - `isRatlsConfigured()` - Checks if RA-TLS is enabled
+   - `parseAppComposeServices(policy)` - Parses docker-compose.yml from policy to extract service images
+   - `getImageUrl(image, digest?)` - Generates GHCR or Docker Hub links for container images
 
 2. **Connection flow:**
    - Browser connects via WebSocket to the RA-TLS proxy (`NEXT_PUBLIC_RATLS_PROXY_URL`)
@@ -187,8 +192,7 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 ## Testing & QA
 - `pnpm lint` – Next.js lint rules with repo-specific overrides (`eslint.config.mjs`).
 - `pnpm test:unit` – Vitest suites for core utilities.
-- `pnpm test:e2e` – Playwright suite that walks the landing page and confidential chat flow with mocked RA-TLS + provider responses.
-- `pnpm test:ratls` – Integration tests for RA-TLS client with the WebSocket proxy (requires building `ratls-proxy`).
+- `pnpm test:e2e` – Playwright suite that walks the landing page and confidential chat flow with mocked provider responses. Set `NEXT_PUBLIC_ATTESTATION_TEST_MODE=true` to skip real attestation verification.
 - `make test` – Runs unit + e2e suites with the required env flags (`FORM_TOKEN_SECRET`, Supabase anon key, etc.).
 
 ## Deployment checklist
@@ -205,6 +209,5 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 - Update the Umbra persona in `lib/system-prompt.ts` or via `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT`.
 - Waitlist statuses are defined in `lib/waitlist.ts` (`requested → contacted → invited → activated → archived`).
 - Tailwind tokens are centralized in `styles/globals.css`. Prefer the CSS variables over hard-coded colors when creating new components.
-- `people.json` powers the advisory board carousel—update it when profiles change.
 
 With the environment configured and Supabase ready, run `pnpm dev`, open `http://localhost:3000`, and walk through the entire Umbra flow. Before opening a PR, run `pnpm lint`, `pnpm test:unit`, and `pnpm test:e2e` (or `make test`) to keep the quality gates green.

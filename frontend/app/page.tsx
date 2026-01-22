@@ -23,7 +23,6 @@ import { ForceLightTheme } from "@/components/force-light-theme"
 import { FeedbackButton } from "@/components/feedback-button"
 import { Button } from "@/components/ui/button"
 import AnnouncementBar from "@/components/announcement-bar"
-import peopleData from "@/people.json"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
 
 const HERO_MESSAGE_STORAGE_KEY = "hero-initial-message"
@@ -84,6 +83,7 @@ export default function LandingPage() {
   // Keep timer ids to stop them cleanly
   const loadingTimerRef = useRef<number | null>(null)
   const loadingTimeoutRef = useRef<number | null>(null)
+  const requestIdRef = useRef(0)
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -512,103 +512,22 @@ export default function LandingPage() {
                 })}
               </div>
             </div>
-            <div className="rounded-[28px] border border-[#d4d3e6] bg-white/95 p-6 shadow-[0_32px_78px_-64px_rgba(15,10,80,0.35)]">
-              <p className="text-sm leading-6 text-[#1F1E28]">
-                <strong className="font-semibold text-[#08070B]">Security Assumptions:</strong> Umbra assumes the TEE
-                hardware vendors (Intel, AMD, NVIDIA) are trusted and correctly implements the security guarantees. The cryptographic verification
-                ensures that only verified code runs in the TEE, protecting against software-based attacks.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section className="px-4 pb-24" id="team">
-          <div className="container flex flex-col gap-10">
-            <div className="max-w-[720px] space-y-4">
-              <span className="text-xs uppercase tracking-[0.4em] text-[#1F1E28]/70">Our Team</span>
-              <h2 className="text-[34px] font-semibold leading-[38px] text-[#08070B]">
-                Building the Future of Confidential AI
-              </h2>
-              <p className="text-base leading-6 text-[#1F1E28]">
-                We are a team of AI researchers, Security researchers, AI engineers, and Security engineers that seek
-                to build the best solutions for confidentiality, privacy, and IP protection using state-of-the-art
-                technology. Our team has deep expertise in TEE (Trusted Execution Environments), FHE (Fully Homomorphic Encryption), PPML (Privacy-Preserving Machine Learning), Side channels, and Hardware security.
-              </p>
-            </div>
-            <div className="grid gap-6 md:grid-cols-3">
-              {peopleData.people.map((person) => (
-                <div
-                  key={person.name}
-                  className="flex flex-col gap-5 rounded-[28px] border border-[#d4d3e6] bg-white/95 p-6 shadow-[0_32px_78px_-64px_rgba(15,10,80,0.35)] backdrop-blur-sm"
-                >
-                  <div className="relative h-24 w-24 overflow-hidden rounded-full border-2 border-[#d4d3e6]">
-                    <Image
-                      src={person.image}
-                      alt={person.name}
-                      fill
-                      className="object-cover"
-                      sizes="96px"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-semibold leading-6 text-[#08070B]">{person.name}</h3>
-                    <p className="text-sm leading-6 text-[#1F1E28]/80">{person.expertise}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="flex justify-center px-4 pb-24">
-          <div className="relative w-full max-w-[880px] overflow-hidden rounded-[40px] border border-[#d4d3e6] bg-[#0B0870] px-10 py-14 text-white shadow-[0_60px_140px_-80px_rgba(9,8,112,0.65)]">
-            <div className="pointer-events-none absolute inset-0 card-gradient-royal opacity-95" aria-hidden />
-            <div className="relative flex flex-col gap-6 text-center md:items-center">
-              <span className="text-xs uppercase tracking-[0.4em] text-white/70">Ready to build?</span>
-              <h2 className="text-[34px] font-semibold leading-[40px] md:max-w-[520px]">
-                Launch a confidential AI program that scales with your compliance and trust requirements.
-              </h2>
-              <p className="mx-auto max-w-[520px] text-sm leading-6 text-white/80">
-                Partner with our security engineers to deploy in your preferred region, integrate with existing data controls,
-                and evolve your policies alongside secure AI workloads.
-              </p>
-              <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
-                <Button
-                  className="h-11 w-full rounded-full border border-white bg-white px-6 text-sm font-semibold text-[#08070B] transition hover:bg-white/95 hover:shadow-lg sm:w-auto sm:min-w-[180px]"
-                  asChild
-                >
-                  <Link href="/confidential-ai" className="flex items-center justify-center gap-2">
-                    Start Secure Chat
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button
-                  variant="outline"
-                  className="h-11 w-full rounded-full border-2 border-white/80 bg-transparent px-6 text-sm font-semibold text-white transition hover:border-white hover:bg-white/10 sm:w-auto sm:min-w-[180px]"
-                  asChild
-                >
-                  <a href="mailto:contact@concrete-security.com" className="flex items-center justify-center">
-                    Schedule a briefing
-                  </a>
-                </Button>
-              </div>
-            </div>
           </div>
         </section>
       </main>
       <footer className="relative z-10 border-t border-[#d4d3e6] bg-transparent">
         <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-[#1F1E28]/70 md:flex-row md:items-center md:justify-between">
-          <p>© {new Date().getFullYear()} Umbra. Umbra for sensitive data.</p>
+          <p>© {new Date().getFullYear()} Umbra.</p>
           <div className="flex flex-wrap gap-4">
             <Link className="transition hover:text-[#1B0986]" href="/confidential-ai">
               Confidential Chat
             </Link>
+            <Link className="transition hover:text-[#1B0986]" href="/team">
+              Team
+            </Link>
             <a className="transition hover:text-[#1B0986]" href="mailto:contact@concrete-security.com">
               Contact
             </a>
-            <Link className="transition hover:text-[#1B0986]" href="/">
-              Privacy Policy
-            </Link>
           </div>
         </div>
       </footer>

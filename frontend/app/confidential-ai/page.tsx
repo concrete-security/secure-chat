@@ -600,6 +600,7 @@ function ConfidentialAIContent() {
       addRatlsLog("info", "Verifying WASM integrity (SHA-384)...")
 
       // Pre-establish the TLS connection immediately on page load
+      addRatlsLog("info", `Connecting to proxy at ${ratlsProxyUrl}`)
       addRatlsLog("info", "Establishing TLS connection...")
       addRatlsLog("info", "Performing TLS handshake with TEE server...")
 
