@@ -119,6 +119,11 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
   const storedProvider = await page.evaluate(() => localStorage.getItem("confidential-provider-settings-v1"))
   console.log("[e2e] provider settings:", storedProvider)
 
+  // Expand the collapsed sidebar first
+  const expandSidebarButton = page.getByRole("button", { name: "Expand panel" })
+  await expect(expandSidebarButton).toBeVisible({ timeout: 10_000 })
+  await expandSidebarButton.click()
+
   // Expand the "Proof of Confidentiality" accordion to see attestation status
   const proofAccordion = page.getByText("Proof of Confidentiality")
   await expect(proofAccordion).toBeVisible({ timeout: 10_000 })

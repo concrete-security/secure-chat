@@ -1987,6 +1987,7 @@ function ConfidentialAIContent() {
                             <Markdown
                               content={bubbleText}
                               className={cn("markdown-body", isUser ? "text-white" : "text-foreground")}
+                              variant={isUser ? "inverted" : "default"}
                             />
                           </div>
                           {truncatedByLength && (
