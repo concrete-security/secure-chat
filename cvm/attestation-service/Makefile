@@ -51,11 +51,13 @@ run: build
 ifeq ($(NO_TDX),true)
 	docker container run -d --rm -p $(HOST_PORT):$(CONTAINER_PORT) \
 		--name $(CONTAINER_NAME) \
+		-e EKM_SHARED_SECRET=test_shared_secret_for_ekm_validation_min_32_chars \
 		$(IMAGE_NAME)
 else
 	docker container run -d --rm -p $(HOST_PORT):$(CONTAINER_PORT) \
 		--name $(CONTAINER_NAME) \
 		-v /var/run/dstack.sock:/var/run/dstack.sock \
+		-e EKM_SHARED_SECRET=test_shared_secret_for_ekm_validation_min_32_chars \
 		$(IMAGE_NAME)
 endif
 
@@ -92,7 +94,11 @@ else
 	uv run test_service.py --base-url $(BASE_URL)
 endif
 
-test: test-build test-api
+pytest:
+	uv sync --group test
+	uv run pytest -v tests
+
+test: test-build test-api pytest
 
 stop:
 	docker container stop $(CONTAINER_NAME) || true

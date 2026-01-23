@@ -80,8 +80,12 @@ services:
     environment:
       - HOST=0.0.0.0
       - PORT=8080
+      # Never enable debug mode in production!
+      - DEBUG_MODE=false
       # Keep it to 1 if you want replication at the container orchestration level (see deploy.replicas)
       - WORKERS=1
+      # Shared secret for EKM header HMAC validation (must match nginx)
+      - EKM_SHARED_SECRET=${EKM_SHARED_SECRET}
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock
     expose:

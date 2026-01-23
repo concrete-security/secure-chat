@@ -47,6 +47,10 @@ services:
       dockerfile: Dockerfile
     environment:
       - WORKERS=1
+      # Enable debug mode to expose /debug/ekm endpoint for testing
+      - DEBUG_MODE=true
+      # Dev-only shared secret for EKM HMAC (must match nginx)
+      - EKM_SHARED_SECRET=dev-ekm-secret-change-in-production-min-32-chars
     deploy:
       mode: replicated
       replicas: 1
