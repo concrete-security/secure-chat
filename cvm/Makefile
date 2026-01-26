@@ -16,7 +16,7 @@ DEV_FLAG = $(if $(filter true,$(DEV)),--dev,)
 # Python runner command
 PYTHON_RUNNER ?= uv run
 
-.PHONY: help dev-full dev-up dev-down hs-up hs-down test-all test-health test-attestation test-vllm test-redirect test-acme test-certificate wait-services
+.PHONY: help dev-full dev-up dev-down hs-up hs-down test-all test-health test-attestation test-vllm test-redirect test-acme test-certificate test-ekm-headers wait-services
 
 help:
 	@echo "CVM (Confidential Virtual Machine) - Build, Run, and Test"
@@ -39,6 +39,7 @@ help:
 	@echo "  test-certificate  Test SSL certificate validation"
 	@echo "  test-cors         Test CORS configuration on multiple endpoints"
 	@echo "  test-metrics-auth Test /metrics endpoint with authentication"
+	@echo "  test-ekm-headers  Test EKM header forwarding (dev mode only)"
 	@echo ""
 	@echo "⚙️  Environment Variables:"
 	@echo "  DEV             Set to 'false' for production mode testing"
@@ -104,3 +105,6 @@ test-cors:
 
 test-metrics-auth:
 	$(PYTHON_RUNNER) test_cvm.py $(DEV_FLAG) --metrics-auth --base-url $(NGINX_URL)
+
+test-ekm-headers:
+	$(PYTHON_RUNNER) test_cvm.py $(DEV_FLAG) --ekm-headers --base-url $(NGINX_URL)

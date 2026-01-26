@@ -29,6 +29,8 @@ services:
       - DOMAIN=localhost
       - DEV_MODE=true
       - EMAIL=test@test.com
+      # Dev-only shared secret for EKM HMAC (CHANGE IN PRODUCTION!)
+      - EKM_SHARED_SECRET=dev-ekm-secret-change-in-production-min-32-chars
     configs:
       - source: acme_test_token_1
         target: /acme-challenge/.well-known/acme-challenge/test-challenge-token-dev

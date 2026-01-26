@@ -843,6 +843,195 @@ class CVMTester:
 
         return success
 
+    def test_ekm_headers(self) -> bool:
+        """Test EKM header forwarding (development mode only)"""
+        self._print_test_header("Testing EKM Header Forwarding (Dev Only)")
+
+        if not self.dev_mode:
+            self._print_warning("Skipping EKM header test (not in dev mode)")
+            return True
+
+        success = True
+
+        # Verify debug endpoint is accessible
+        try:
+            response = self.session.get(
+                f"{self.base_url}/debug/ekm",
+                verify=self.verify_ssl,
+                timeout=5,
+            )
+
+            if response.status_code != 200:
+                self._print_error(f"Debug endpoint returned {response.status_code}")
+                return False
+
+            data = response.json()
+
+            # Check if debug mode is enabled
+            if "error" in data:
+                self._print_warning(f"Debug endpoint not enabled: {data.get('message')}")
+                return False
+
+            # Verify EKM header is present
+            if not data.get("ekm_header_present"):
+                self._print_error("EKM header not present in request")
+                success = False
+            else:
+                self._print_success("EKM header present in request")
+
+            # Check header format
+            header_format = data.get("format", "unknown")
+            if header_format == "signed":
+                self._print_success("EKM header uses signed format")
+
+                # Verify HMAC validation
+                if not data.get("hmac_valid"):
+                    self._print_error("HMAC validation failed!")
+                    success = False
+                else:
+                    self._print_success("HMAC validation passed")
+
+                # Verify EKM value length (should be 64 hex characters = 32 bytes)
+                ekm_full = data.get("ekm_full", "")
+                if len(ekm_full) != 64:
+                    self._print_error(f"EKM value length is {len(ekm_full)}, expected 64")
+                    success = False
+                else:
+                    self._print_success(f"EKM value has correct length (64 hex chars)")
+
+                # Verify it's valid hex
+                try:
+                    bytes.fromhex(ekm_full)
+                    self._print_success("EKM value is valid hex encoding")
+                    self._print_info(f"  EKM value: {ekm_full[:32]}...{ekm_full[-8:]}")
+                except ValueError:
+                    self._print_error(f"EKM value is not valid hex: {ekm_full}")
+                    success = False
+            else:
+                self._print_error(f"EKM header format is '{header_format}', expected 'signed'")
+                success = False
+
+        except requests.exceptions.RequestException as e:
+            self._print_error(f"EKM header test failed: {str(e)}")
+            success = False
+        except Exception as e:
+            self._print_error(f"EKM header test failed: {str(e)}")
+            success = False
+
+        # Verify EKM consistency within same session
+        if success:
+            self._print_info("Testing EKM consistency within same TLS session...")
+            same_session_ekm_values = []
+
+            try:
+                # Reuse the same session for multiple requests
+                same_session = requests.Session()
+                for i in range(3):
+                    response = same_session.get(
+                        f"{self.base_url}/debug/ekm",
+                        verify=self.verify_ssl,
+                        timeout=5,
+                    )
+                    if response.status_code == 200:
+                        data = response.json()
+                        ekm_full = data.get("ekm_full", "")
+                        same_session_ekm_values.append(ekm_full)
+                same_session.close()
+
+                # Check that all values are identical (same TLS session)
+                unique_count = len(set(same_session_ekm_values))
+                total_count = len(same_session_ekm_values)
+                if unique_count == 1 and total_count == 3:
+                    self._print_success(f"All {total_count} requests in same session produced identical EKM")
+                else:
+                    self._print_error(
+                        f"EKM values within same session are not consistent! (unique: {unique_count}/{total_count})"
+                    )
+                    success = False
+
+            except Exception as e:
+                self._print_error(f"EKM consistency test failed: {str(e)}")
+                success = False
+
+        # Verify EKM uniqueness across sessions
+        if success:
+            self._print_info("Testing EKM uniqueness across TLS sessions...")
+            ekm_values = []
+
+            try:
+                for i in range(3):
+                    # Create a fresh session for each request to force new TCP/TLS connection
+                    fresh_session = requests.Session()
+                    response = fresh_session.get(
+                        f"{self.base_url}/debug/ekm",
+                        verify=self.verify_ssl,
+                        timeout=5,
+                    )
+                    fresh_session.close()  # Explicitly close to ensure connection is terminated
+
+                    if response.status_code == 200:
+                        data = response.json()
+                        ekm_full = data.get("ekm_full", "")
+                        ekm_values.append(ekm_full)
+
+                # Check that all values are unique (different TLS sessions)
+                unique_count = len(set(ekm_values))
+                total_count = len(ekm_values)
+                if unique_count == total_count and total_count == 3:
+                    self._print_success(f"All {total_count} sessions produced unique EKM values")
+                else:
+                    self._print_error(
+                        f"EKM values are not unique! (unique: {unique_count}/{total_count})"
+                    )
+                    success = False
+
+            except Exception as e:
+                self._print_error(f"EKM uniqueness test failed: {str(e)}")
+                success = False
+
+        # Verify clients cannot spoof the EKM header
+        if success:
+            self._print_info("Testing that clients cannot spoof EKM header...")
+
+            try:
+                # Try to send a fake EKM header
+                fake_ekm = "0" * 64  # Fake EKM value (all zeros)
+
+                spoofed_session = requests.Session()
+                response = spoofed_session.get(
+                    f"{self.base_url}/debug/ekm",
+                    headers={"X-TLS-EKM-Channel-Binding": fake_ekm},
+                    verify=self.verify_ssl,
+                    timeout=5,
+                )
+                spoofed_session.close()
+
+                if response.status_code == 200:
+                    data = response.json()
+                    actual_ekm = data.get("ekm_full", "")
+
+                    # The actual EKM should NOT be the fake one we sent
+                    if actual_ekm == fake_ekm:
+                        self._print_error(
+                            "Security issue: Client-provided EKM header was not overridden by nginx!"
+                        )
+                        success = False
+                    else:
+                        self._print_success(
+                            "Client-provided EKM header correctly overridden by nginx"
+                        )
+                        self._print_info(f"  Client sent: {fake_ekm}")
+                        self._print_info(f"  Server used: {actual_ekm[:32]}...{actual_ekm[-8:]}")
+                else:
+                    self._print_error(f"Debug endpoint returned {response.status_code}")
+                    success = False
+
+            except Exception as e:
+                self._print_error(f"EKM spoofing test failed: {str(e)}")
+                success = False
+
+        return success
+
     def run_all_tests(self) -> bool:
         """Run all test suites"""
         mode = "Development" if self.dev_mode else "Production"
@@ -860,6 +1049,7 @@ class CVMTester:
             "cors": self.test_cors(),
             "vllm": self.test_vllm(),
             "metrics_auth": self.test_metrics_auth(),
+            "ekm_headers": self.test_ekm_headers(),
         }
 
         print("\n" + "=" * 50)
@@ -956,6 +1146,9 @@ Examples:
         "--metrics-auth", action="store_true", help="Test metrics endpoint authentication"
     )
     parser.add_argument(
+        "--ekm-headers", action="store_true", help="Test EKM header forwarding (dev mode only)"
+    )
+    parser.add_argument(
         "--auth-token",
         default=None,
         help="Auth token for metrics endpoint (default: dev token in dev mode)",
@@ -975,6 +1168,7 @@ Examples:
             args.cors,
             args.vllm,
             args.metrics_auth,
+            args.ekm_headers,
         ]
     ):
         args.all = True
@@ -1021,6 +1215,9 @@ Examples:
 
     if args.metrics_auth:
         success &= tester.test_metrics_auth()
+
+    if args.ekm_headers:
+        success &= tester.test_ekm_headers()
 
     sys.exit(0 if success else 1)
 
