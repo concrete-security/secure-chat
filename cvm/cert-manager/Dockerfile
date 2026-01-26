@@ -1,16 +1,61 @@
 # Combined Nginx and Certificate Manager Dockerfile
 
 # nginx:1.29-alpine
+# TODO: Update NGINX_VERSION if changing nginx image version.
+# This stage is used to build the Nginx EKM module
+FROM nginx@sha256:61e01287e546aac28a3f56839c136b31f590273f3b41187a36f46f6a03bbfe22 AS builder
+
+# Define nginx version (must match runtime image)
+ENV NGINX_VERSION=1.29.2
+
+# Install build dependencies (pinned versions for reproducibility)
+RUN apk add --no-cache \
+    gcc=14.2.0-r6 \
+    musl-dev=1.2.5-r10 \
+    make=4.4.1-r3 \
+    openssl-dev=3.5.4-r0 \
+    pcre2-dev=10.46-r0 \
+    wget=1.25.0-r1
+
+# Download nginx source matching the version
+RUN wget --progress=dot:giga "http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz" && \
+    tar -xzvf nginx-${NGINX_VERSION}.tar.gz
+
+# Copy module source
+COPY ngx_http_ekm_module /nginx-${NGINX_VERSION}/ngx_http_ekm_module
+
+WORKDIR /nginx-${NGINX_VERSION}
+
+# Build module
+RUN ./configure --with-compat \
+    --add-dynamic-module=./ngx_http_ekm_module && \
+    make modules
+
+
+# nginx:1.29-alpine
+# TODO: Update NGINX_VERSION if changing nginx image version.
 FROM nginx@sha256:61e01287e546aac28a3f56839c136b31f590273f3b41187a36f46f6a03bbfe22
+
+# Copy compiled Nginx EKM module from builder
+COPY --from=builder /nginx-${NGINX_VERSION}/objs/ngx_http_ekm_module.so /usr/lib/nginx/modules/
+
+# Load Nginx EKM module in main nginx.conf (must be at top level)
+# Make EKM_SHARED_SECRET env variable available to nginx
+RUN sed -i '1i load_module /usr/lib/nginx/modules/ngx_http_ekm_module.so;' /etc/nginx/nginx.conf && \
+    sed -i '2i env EKM_SHARED_SECRET;' /etc/nginx/nginx.conf
+
+# Test: verify that config is correct and that the module is loaded correctly
+SHELL ["/bin/ash", "-o", "pipefail", "-c"]
+RUN nginx -t && \
+    nginx -T 2>&1 | grep -q "ngx_http_ekm_module" || exit 1
 
 # ghcr.io/astral-sh/uv:0.9.5
 COPY --from=ghcr.io/astral-sh/uv@sha256:f459f6f73a8c4ef5d69f4e6fbbdb8af751d6fa40ec34b39a1ab469acd6e289b7 /uv /uvx /bin/
 
 EXPOSE 80 443
 
-# TODO: thing about reproducible build
-# Install Python and dependencies
-RUN apk add --no-cache supervisor
+# Install supervisor (pinned version for reproducibility)
+RUN apk add --no-cache supervisor=4.2.5-r5
 
 # Create app directory
 WORKDIR /app
