@@ -67,7 +67,9 @@ jobs:
       - name: Start attestation service container
         run: |
           # Start the container in detached mode
-          docker run -d --name attestation-service-test -p 8080:8080 attestation-service:test
+          docker run -d --name attestation-service-test -p 8080:8080 \
+            -e EKM_SHARED_SECRET=test_shared_secret_for_ekm_validation_min_32_chars \
+            attestation-service:test
 
       - name: Install uv
         uses: astral-sh/setup-uv@2ddd2b9cb38ad8efd50337e8ab201519a34c9f24 # v7
