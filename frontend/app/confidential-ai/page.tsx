@@ -37,7 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
-import { createRatlsClient, warmupRatlsConnection, getRatlsProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type RatlsAttestationResult, type RatlsPolicy } from "@/lib/ratls-client"
+import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy } from "@/lib/atlas-client"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -65,13 +65,13 @@ type StoredProviderSettings = {
   baseUrl?: string
 }
 
-type RatlsConnectionState =
+type AtlsConnectionState =
   | { status: "disconnected" }
   | { status: "connecting" }
-  | { status: "connected"; attestation: RatlsAttestationResult }
+  | { status: "connected"; attestation: AtlasAttestationResult }
   | { status: "error"; error: string }
 
-type RatlsLogEntry = {
+type AtlsLogEntry = {
   timestamp: Date
   level: "info" | "success" | "warn" | "error"
   message: string
@@ -172,7 +172,7 @@ function ConfidentialAIContent() {
   const envProviderApiBase = normalize(confidentialChatConfig.providerApiBase)
   const envProviderModel = normalize(confidentialChatConfig.providerModel)
   const envProviderName = normalize(confidentialChatConfig.providerName)
-  const ratlsProxyUrl = getRatlsProxyUrl()
+  const atlsProxyUrl = getAtlasProxyUrl()
 
   const [providerBaseUrlInput, setProviderBaseUrlInput] = useState(() => envProviderApiBase ?? "")
   const [providerApiKeyInput, setProviderApiKeyInput] = useState("")
@@ -194,17 +194,17 @@ function ConfidentialAIContent() {
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null)
   const [guestUsageRestricted, setGuestUsageRestricted] = useState(false)
   const [guestNotice, setGuestNotice] = useState<string | null>(null)
-  const [ratlsState, setRatlsState] = useState<RatlsConnectionState>({ status: "disconnected" })
-  const ratlsFetchRef = useRef<typeof fetch | null>(null)
+  const [atlsState, setAtlsState] = useState<AtlsConnectionState>({ status: "disconnected" })
+  const atlasFetchRef = useRef<typeof fetch | null>(null)
   const [proofDetailsModalOpen, setProofDetailsModalOpen] = useState(false)
-  const [ratlsLogs, setRatlsLogs] = useState<RatlsLogEntry[]>([])
+  const [atlsLogs, setAtlsLogs] = useState<AtlsLogEntry[]>([])
 
-  const addRatlsLog = useCallback((level: RatlsLogEntry["level"], message: string) => {
-    const entry: RatlsLogEntry = { timestamp: new Date(), level, message }
-    setRatlsLogs(prev => [...prev, entry])
+  const addAtlsLog = useCallback((level: AtlsLogEntry["level"], message: string) => {
+    const entry: AtlsLogEntry = { timestamp: new Date(), level, message }
+    setAtlsLogs(prev => [...prev, entry])
     // Also log to console
     const consoleMethod = level === "error" ? console.error : level === "warn" ? console.warn : console.log
-    consoleMethod(`[RA-TLS] ${message}`)
+    consoleMethod(`[aTLS] ${message}`)
   }, [])
 
   const providerApiBase = normalize(providerBaseUrlInput)
@@ -273,7 +273,48 @@ function ConfidentialAIContent() {
     },
   ])
 
-  const secureChannelReady = ratlsState.status === "connected" && ratlsState.attestation.trusted
+  const secureChannelReady = atlsState.status === "connected" && atlsState.attestation.trusted
+  const secureStatusLabel = secureChannelReady
+    ? "Secure session verified"
+    : atlsState.status === "connecting"
+      ? "Verifying secure session"
+      : atlsState.status === "error"
+        ? "Secure session unavailable"
+        : providerConfigured
+          ? "Secure session pending"
+          : "Secure session not configured"
+  const secureStatusSubline = secureChannelReady
+    ? "End-to-end encrypted with hardware attestation."
+    : atlsState.status === "connecting"
+      ? "Confirming server integrity before enabling chat."
+      : atlsState.status === "error"
+        ? "Verification failed. Reconnect to try again."
+        : providerConfigured
+          ? "Awaiting secure channel verification."
+          : "Add a provider base URL to start a verified session."
+  const secureTone = secureChannelReady
+    ? "ok"
+    : atlsState.status === "error"
+      ? "error"
+      : atlsState.status === "connecting"
+        ? "pending"
+        : "idle"
+  const secureDotClass =
+    secureTone === "ok"
+      ? "bg-emerald-500"
+      : secureTone === "error"
+        ? "bg-rose-500"
+        : secureTone === "pending"
+          ? "bg-sky-500 animate-pulse"
+          : "bg-slate-400"
+  const secureTextClass =
+    secureTone === "ok"
+      ? "text-emerald-700 dark:text-emerald-300"
+      : secureTone === "error"
+        ? "text-rose-700 dark:text-rose-300"
+        : secureTone === "pending"
+          ? "text-sky-700 dark:text-sky-300"
+          : "text-slate-600 dark:text-slate-300"
 
   const applySupabaseSession = useCallback(
     (sessionUserEmail: string | null) => {
@@ -552,25 +593,25 @@ function ConfidentialAIContent() {
     }
   }
 
-  const connectRatls = useCallback(async () => {
+  const connectAtls = useCallback(async () => {
     // Clear previous logs on new connection attempt
-    setRatlsLogs([])
+    setAtlsLogs([])
 
     if (!providerApiBase) {
-      addRatlsLog("info", "Waiting for provider configuration...")
-      setRatlsState({ status: "disconnected" })
+      addAtlsLog("info", "Waiting for provider configuration...")
+      setAtlsState({ status: "disconnected" })
       return
     }
 
     // Test mode: auto-verify attestation for E2E testing (only in non-production builds)
-    if (ATTESTATION_TEST_MODE && !ratlsProxyUrl) {
-      addRatlsLog("info", "Test mode: simulating attestation...")
-      setRatlsState({ status: "connecting" })
+    if (ATTESTATION_TEST_MODE && !atlsProxyUrl) {
+      addAtlsLog("info", "Test mode: simulating attestation...")
+      setAtlsState({ status: "connecting" })
       await new Promise(resolve => setTimeout(resolve, 500))
-      addRatlsLog("success", "Test mode: attestation auto-verified")
+      addAtlsLog("success", "Test mode: attestation auto-verified")
       // Use regular fetch in test mode so chat messages can be sent
-      ratlsFetchRef.current = fetch
-      setRatlsState({
+      atlasFetchRef.current = fetch
+      setAtlsState({
         status: "connected",
         attestation: {
           trusted: true,
@@ -581,89 +622,89 @@ function ConfidentialAIContent() {
       return
     }
 
-    if (!ratlsProxyUrl) {
-      addRatlsLog("error", "No proxy URL configured")
-      setRatlsState({ status: "error", error: "RA-TLS proxy URL not configured" })
+    if (!atlsProxyUrl) {
+      addAtlsLog("error", "No proxy URL configured")
+      setAtlsState({ status: "error", error: "aTLS proxy URL not configured" })
       return
     }
 
     const targetHost = deriveTargetHost(providerApiBase)
-    addRatlsLog("info", `Initiating connection to ${targetHost}`)
-    setRatlsState({ status: "connecting" })
+    addAtlsLog("info", `Initiating connection to ${targetHost}`)
+    setAtlsState({ status: "connecting" })
 
     try {
       // Use the environment-appropriate policy (production or dev)
       const policy = getPolicy()
-      const config = { proxyUrl: ratlsProxyUrl, targetHost, policy }
+      const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
 
-      addRatlsLog("info", "Loading WASM attestation module...")
-      addRatlsLog("info", "Verifying WASM integrity (SHA-384)...")
+      addAtlsLog("info", "Loading WASM attestation module...")
+      addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
 
       // Pre-establish the TLS connection immediately on page load
-      addRatlsLog("info", `Connecting to proxy at ${ratlsProxyUrl}`)
-      addRatlsLog("info", "Establishing TLS connection...")
-      addRatlsLog("info", "Performing TLS handshake with TEE server...")
+      addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
+      addAtlsLog("info", "Establishing TLS connection...")
+      addAtlsLog("info", "Performing TLS handshake with TEE server...")
 
-      await warmupRatlsConnection(config, (att) => {
-        addRatlsLog("info", "Received attestation quote from server")
-        addRatlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
-        addRatlsLog("info", "Verifying Intel TDX quote with DCAP...")
-        addRatlsLog("info", `TCB Status: ${att.tcbStatus}`)
+      await warmupAtlasConnection(config, (att) => {
+        addAtlsLog("info", "Received attestation quote from server")
+        addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
+        addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
+        addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
 
         if (policy.expected_bootchain?.mrtd) {
-          addRatlsLog("info", "Verifying MRTD measurement...")
+          addAtlsLog("info", "Verifying MRTD measurement...")
         }
         if (policy.expected_bootchain?.rtmr0) {
-          addRatlsLog("info", "Verifying RTMR0 (firmware)...")
+          addAtlsLog("info", "Verifying RTMR0 (firmware)...")
         }
         if (policy.expected_bootchain?.rtmr1) {
-          addRatlsLog("info", "Verifying RTMR1 (OS)...")
+          addAtlsLog("info", "Verifying RTMR1 (OS)...")
         }
         if (policy.expected_bootchain?.rtmr2) {
-          addRatlsLog("info", "Verifying RTMR2 (application)...")
+          addAtlsLog("info", "Verifying RTMR2 (application)...")
         }
         if (policy.os_image_hash) {
-          addRatlsLog("info", "Verifying OS image hash...")
+          addAtlsLog("info", "Verifying OS image hash...")
         }
         if (policy.app_compose?.docker_compose_file) {
-          addRatlsLog("info", "Verifying container image digests...")
+          addAtlsLog("info", "Verifying container image digests...")
         }
 
         if (att.trusted) {
-          addRatlsLog("success", "All attestation checks passed")
-          addRatlsLog("success", "Secure channel established")
+          addAtlsLog("success", "All attestation checks passed")
+          addAtlsLog("success", "Secure channel established")
         } else {
-          addRatlsLog("warn", "Attestation verification completed with warnings")
+          addAtlsLog("warn", "Attestation verification completed with warnings")
         }
 
-        setRatlsState({
+        setAtlsState({
           status: "connected",
           attestation: att,
         })
       })
 
       // Create the fetch client (will reuse the warmed-up connection)
-      const ratlsFetch = await createRatlsClient(config)
-      ratlsFetchRef.current = ratlsFetch
+      const atlasFetch = await createAtlasClient(config)
+      atlasFetchRef.current = atlasFetch
 
     } catch (error) {
       // Sanitize error message in production
       const errorMessage = process.env.NODE_ENV === "production"
         ? "Failed to establish secure connection"
-        : error instanceof Error ? error.message : "Failed to establish RA-TLS connection"
-      addRatlsLog("error", `Connection failed: ${errorMessage}`)
-      setRatlsState({
+        : error instanceof Error ? error.message : "Failed to establish aTLS connection"
+      addAtlsLog("error", `Connection failed: ${errorMessage}`)
+      setAtlsState({
         status: "error",
         error: errorMessage,
       })
     }
-  }, [ratlsProxyUrl, providerApiBase, addRatlsLog])
+  }, [atlsProxyUrl, providerApiBase, addAtlsLog])
 
   useEffect(() => {
-    void connectRatls()
-  }, [connectRatls])
+    void connectAtls()
+  }, [connectAtls])
 
-  const RatlsProofContent = ({
+  const AtlsProofContent = ({
     variant,
     onViewDetails,
   }: {
@@ -680,7 +721,7 @@ function ConfidentialAIContent() {
       : "Configure a provider URL to establish secure connection."
 
     const statusBadge = (() => {
-      switch (ratlsState.status) {
+      switch (atlsState.status) {
         case "connected":
           return (
             <div className={cn(badgeBase, "border-[#1BAF9F]/60 bg-[#1BAF9F]/10 text-[#037C6A]")}>
@@ -708,19 +749,19 @@ function ConfidentialAIContent() {
 
     type ChecklistState = "pending" | "running" | "ok" | "error"
     const connectionState: ChecklistState =
-      ratlsState.status === "connecting"
+      atlsState.status === "connecting"
         ? "running"
-        : ratlsState.status === "connected"
+        : atlsState.status === "connected"
           ? "ok"
-          : ratlsState.status === "error"
+          : atlsState.status === "error"
             ? "error"
             : "pending"
     const attestationState: ChecklistState =
-      ratlsState.status === "connecting"
+      atlsState.status === "connecting"
         ? "running"
-        : ratlsState.status === "connected" && ratlsState.attestation.trusted
+        : atlsState.status === "connected" && atlsState.attestation.trusted
           ? "ok"
-          : ratlsState.status === "error"
+          : atlsState.status === "error"
             ? "error"
             : "pending"
 
@@ -732,8 +773,8 @@ function ConfidentialAIContent() {
       },
       {
         label: "Hardware protection active",
-        description: ratlsState.status === "connected"
-          ? `${ratlsState.attestation.teeType} - ${ratlsState.attestation.tcbStatus}`
+        description: atlsState.status === "connected"
+          ? `${atlsState.attestation.teeType} - ${atlsState.attestation.tcbStatus}`
           : "Verifying secure environment...",
         state: attestationState,
       },
@@ -753,9 +794,9 @@ function ConfidentialAIContent() {
     }
 
     const body = (() => {
-      switch (ratlsState.status) {
+      switch (atlsState.status) {
         case "connected": {
-          const isVerified = ratlsState.attestation.trusted
+          const isVerified = atlsState.attestation.trusted
           return (
             <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
               <div
@@ -796,8 +837,8 @@ function ConfidentialAIContent() {
         case "error":
           return (
             <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
-              <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
-                {ratlsState.error}
+              <div className="border-l-2 border-rose-400 pl-3 text-rose-700 dark:text-rose-300">
+                {atlsState.error}
               </div>
             </div>
           )
@@ -854,13 +895,16 @@ function ConfidentialAIContent() {
             type="button"
             variant="secondary"
             size={isCompact ? "sm" : "default"}
-            onClick={() => void connectRatls()}
-            disabled={ratlsState.status === "connecting" || !providerApiBase}
-            className="rounded-full"
+            onClick={() => void connectAtls()}
+            disabled={atlsState.status === "connecting" || !providerApiBase}
+            className={cn(
+              "rounded-full font-semibold vault-outline hover:bg-[rgb(var(--vault-ink)/0.05)] hover:text-[color:rgb(var(--vault-ink))]",
+              isCompact ? "text-xs" : "text-sm"
+            )}
           >
-            {ratlsState.status === "connecting" ? "Connecting…" : "Reconnect"}
+            {atlsState.status === "connecting" ? "Connecting..." : "Reconnect"}
           </Button>
-          {onViewDetails && ratlsState.status === "connected" && (
+          {onViewDetails && atlsState.status === "connected" && (
             <Button
               type="button"
               variant="outline"
@@ -876,8 +920,8 @@ function ConfidentialAIContent() {
     )
   }
 
-  const RatlsDetailsModal = () => {
-    if (ratlsState.status !== "connected") return null
+  const AtlsDetailsModal = () => {
+    if (atlsState.status !== "connected") return null
 
     const targetHost = providerApiBase ? deriveTargetHost(providerApiBase) : "Unknown"
     const policy = getPolicy()
@@ -896,7 +940,7 @@ function ConfidentialAIContent() {
             {/* Verification Status - moved to top */}
             <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/10">
               <div className="flex items-center gap-2">
-                {ratlsState.attestation.trusted ? (
+                {atlsState.attestation.trusted ? (
                   <>
                     <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                     <span className="text-sm font-medium text-emerald-600">
@@ -927,13 +971,13 @@ function ConfidentialAIContent() {
                   <div className="flex items-center justify-between">
                     <dt className="text-muted-foreground">TEE Type</dt>
                     <dd className="font-mono text-foreground/80 uppercase">
-                      {ratlsState.attestation.teeType}
+                      {atlsState.attestation.teeType}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between">
                     <dt className="text-muted-foreground">TCB Status</dt>
                     <dd className="font-mono text-foreground/80">
-                      {ratlsState.attestation.tcbStatus}
+                      {atlsState.attestation.tcbStatus}
                     </dd>
                   </div>
                 </dl>
@@ -1037,22 +1081,22 @@ function ConfidentialAIContent() {
             )}
 
             {/* Attestation Logs Console */}
-            {ratlsLogs.length > 0 && (
+            {atlsLogs.length > 0 && (
               <Accordion type="single" collapsible className="w-full">
                 <AccordionItem value="logs" className="border-none">
                   <AccordionTrigger className="py-2 hover:no-underline">
                     <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                       <Terminal className="h-4 w-4" />
                       Attestation Log
-                      <span className="text-xs font-normal text-muted-foreground">
-                        ({ratlsLogs.length} entries)
+                      <span className="text-xs font-normal vault-muted">
+                        ({atlsLogs.length} entries)
                       </span>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="rounded-lg border border-border/40 bg-zinc-950 dark:bg-zinc-900 overflow-hidden">
                       <div className="max-h-[200px] overflow-y-auto p-3 font-mono text-xs">
-                        {ratlsLogs.map((log, index) => (
+                        {atlsLogs.map((log, index) => (
                           <div key={index} className="flex gap-2 py-0.5">
                             <span className="text-zinc-500 shrink-0">
                               {log.timestamp.toLocaleTimeString("en-US", {
@@ -1414,8 +1458,8 @@ function ConfidentialAIContent() {
     }
 
     try {
-      if (!ratlsFetchRef.current) {
-        throw new Error("RA-TLS connection not established. Cannot connect to model securely.")
+      if (!atlasFetchRef.current) {
+        throw new Error("aTLS connection not established. Cannot connect to model securely.")
       }
       let streamedContent = ""
       let streamedReasoning = ""
@@ -1433,7 +1477,7 @@ function ConfidentialAIContent() {
             baseUrl: providerApiBase,
             apiKey: trimmedToken || undefined,
           },
-          fetchImpl: ratlsFetchRef.current,
+          fetchImpl: atlasFetchRef.current,
         }
       )) {
         if (chunk.type === "delta" && chunk.content) {
@@ -1726,7 +1770,7 @@ function ConfidentialAIContent() {
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="mt-3 space-y-3 rounded-2xl border border-brand-primary/30 bg-[linear-gradient(135deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.12))] p-4 shadow-sm dark:border-brand-primary/40 dark:bg-[linear-gradient(135deg,rgba(16,42,140,0.18),rgba(11,31,102,0.28))]">
-                      <RatlsProofContent
+                      <AtlsProofContent
                         variant="sidebar"
                         onViewDetails={() => setProofDetailsModalOpen(true)}
                       />
@@ -1734,8 +1778,15 @@ function ConfidentialAIContent() {
                   </AccordionItem>
                 </Accordion>
 
-                <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Reasoning intensity</h3>
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-foreground">Security proof</p>
+                  <div className="border-l-2 border-[rgb(var(--vault-accent)/0.35)] pl-4 pr-3 py-2">
+                    <AtlsProofContent variant="sidebar" onViewDetails={() => setProofDetailsModalOpen(true)} />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold text-foreground">Reasoning</p>
                   <div className="flex flex-wrap gap-2">
                     {["low", "medium", "high"].map((effort) => (
                       <Button
@@ -2058,10 +2109,10 @@ function ConfidentialAIContent() {
 
                 {/* Input area with security indicator wrapper */}
                 {(() => {
-                  const isConnecting = ratlsState.status === "connecting"
+                  const isConnecting = atlsState.status === "connecting"
                   const isVerified = secureChannelReady
-                  const hasFailed = ratlsState.status === "error"
-                  const showSecurityState = ratlsState.status !== "disconnected"
+                  const hasFailed = atlsState.status === "error"
+                  const showSecurityState = atlsState.status !== "disconnected"
 
                   const tooltipText = isVerified
                     ? "Session secured with hardware protection"
@@ -2300,7 +2351,7 @@ function ConfidentialAIContent() {
                   ? `Secure connection to ${deriveTargetHost(providerApiBase)}.`
                   : "Configure a provider URL to establish secure connection."}
               </p>
-              <RatlsProofContent
+              <AtlsProofContent
                 variant="dialog"
                 onViewDetails={() => setProofDetailsModalOpen(true)}
               />
@@ -2308,8 +2359,8 @@ function ConfidentialAIContent() {
           </Tabs>
         </DialogContent>
       </Dialog>
-      <RatlsDetailsModal />
-      <FeedbackButton source="confidential" position="top-right" />
+      <AtlsDetailsModal />
+      <FeedbackButton source="confidential" position="bottom-right" />
     </div>
   )
 }

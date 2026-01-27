@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@concrete-security/atlas-wasm':
+        specifier: 0.1.0
+        version: 0.1.0
       '@emotion/is-prop-valid':
         specifier: latest
         version: 1.4.0
@@ -309,6 +312,9 @@ packages:
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
     engines: {node: '>=18'}
+
+  '@concrete-security/atlas-wasm@0.1.0':
+    resolution: {integrity: sha512-P0KwEVKJPAvS1wX8gHlt3EeBabMFnBuMrA9Zq0pAKMyH5SM8L40wL8l0O6tNNN1fCA6angNnIsQECXZPMci4gA==}
 
   '@date-fns/tz@1.2.0':
     resolution: {integrity: sha512-LBrd7MiJZ9McsOgxqWX7AaxrDjcFVjWH/tIKJd7pnR7McaslGYOP1QmmiBXdJH/H/yLCT+rcQ7FaPBUxRGUtrg==}
@@ -4376,6 +4382,8 @@ snapshots:
       '@babel/helper-validator-identifier': 7.28.5
 
   '@bcoe/v8-coverage@1.0.2': {}
+
+  '@concrete-security/atlas-wasm@0.1.0': {}
 
   '@date-fns/tz@1.2.0': {}
 

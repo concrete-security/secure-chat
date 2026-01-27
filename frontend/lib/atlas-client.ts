@@ -1,26 +1,27 @@
 /**
- * RA-TLS Client Module
+ * aTLS Client Module
  *
- * Provides a typed wrapper around the ratls-wasm package for use in Next.js.
+ * Provides a typed wrapper around the @concrete-security/atlas-wasm package for use in Next.js.
  * Handles WASM initialization with lazy loading and client-side only execution.
  *
- * The ratls-wasm library handles all attestation verification and policy validation.
+ * The atlas-wasm library handles all attestation verification and policy validation.
  * This wrapper provides:
- * - WASM integrity verification (essential - WASM can't verify itself)
  * - Convenience helpers for building policies from environment variables
  * - TypeScript types
+ *
+ * Package integrity is verified by npm/pnpm during installation.
  */
 
 import YAML from "yaml"
 
-export type RatlsAttestationResult = {
+export type AtlasAttestationResult = {
   trusted: boolean
   teeType: string
   tcbStatus: string
 }
 
-/** Verification policy for RA-TLS connections */
-export type RatlsPolicy = {
+/** Verification policy for aTLS connections */
+export type AtlasPolicy = {
   type: "dstack_tdx"
   /** Expected bootchain measurements */
   expected_bootchain?: {
@@ -46,7 +47,7 @@ export type RatlsPolicy = {
  * Development policy - for local development/testing only.
  * The library requires explicit opt-in for relaxed verification.
  */
-export const DEV_POLICY: RatlsPolicy = {
+export const DEV_POLICY: AtlasPolicy = {
   type: "dstack_tdx",
   disable_runtime_verification: true,
   allowed_tcb_status: ["UpToDate", "SWHardeningNeeded", "OutOfDate"],
@@ -56,28 +57,28 @@ export const DEV_POLICY: RatlsPolicy = {
  * Create a policy from environment variables.
  *
  * Environment variables:
- * - NEXT_PUBLIC_RATLS_EXPECTED_MRTD
- * - NEXT_PUBLIC_RATLS_EXPECTED_RTMR0
- * - NEXT_PUBLIC_RATLS_EXPECTED_RTMR1
- * - NEXT_PUBLIC_RATLS_EXPECTED_RTMR2
- * - NEXT_PUBLIC_RATLS_EXPECTED_OS_HASH
- * - NEXT_PUBLIC_RATLS_APP_COMPOSE (base64 encoded JSON string - preferred)
- * - NEXT_PUBLIC_RATLS_DOCKER_COMPOSE (base64 encoded - legacy, use APP_COMPOSE instead)
- * - NEXT_PUBLIC_RATLS_ALLOWED_ENVS (comma-separated - legacy, use APP_COMPOSE instead)
- * - NEXT_PUBLIC_RATLS_ALLOWED_TCB_STATUS (comma-separated, defaults to "UpToDate")
+ * - NEXT_PUBLIC_ATLAS_EXPECTED_MRTD
+ * - NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0
+ * - NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1
+ * - NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2
+ * - NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH
+ * - NEXT_PUBLIC_ATLAS_APP_COMPOSE (base64 encoded JSON string - preferred)
+ * - NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE (base64 encoded - legacy, use APP_COMPOSE instead)
+ * - NEXT_PUBLIC_ATLAS_ALLOWED_ENVS (comma-separated - legacy, use APP_COMPOSE instead)
+ * - NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS (comma-separated, defaults to "UpToDate")
  */
-export function createPolicyFromEnv(): RatlsPolicy {
-  const mrtd = process.env.NEXT_PUBLIC_RATLS_EXPECTED_MRTD?.trim()
-  const rtmr0 = process.env.NEXT_PUBLIC_RATLS_EXPECTED_RTMR0?.trim()
-  const rtmr1 = process.env.NEXT_PUBLIC_RATLS_EXPECTED_RTMR1?.trim()
-  const rtmr2 = process.env.NEXT_PUBLIC_RATLS_EXPECTED_RTMR2?.trim()
-  const osHash = process.env.NEXT_PUBLIC_RATLS_EXPECTED_OS_HASH?.trim()
-  const appComposeRaw = process.env.NEXT_PUBLIC_RATLS_APP_COMPOSE?.trim()
-  const dockerCompose = process.env.NEXT_PUBLIC_RATLS_DOCKER_COMPOSE?.trim()
-  const allowedEnvsRaw = process.env.NEXT_PUBLIC_RATLS_ALLOWED_ENVS?.trim()
-  const allowedTcbRaw = process.env.NEXT_PUBLIC_RATLS_ALLOWED_TCB_STATUS?.trim()
+export function createPolicyFromEnv(): AtlasPolicy {
+  const mrtd = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_MRTD?.trim()
+  const rtmr0 = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0?.trim()
+  const rtmr1 = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1?.trim()
+  const rtmr2 = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2?.trim()
+  const osHash = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH?.trim()
+  const appComposeRaw = process.env.NEXT_PUBLIC_ATLAS_APP_COMPOSE?.trim()
+  const dockerCompose = process.env.NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE?.trim()
+  const allowedEnvsRaw = process.env.NEXT_PUBLIC_ATLAS_ALLOWED_ENVS?.trim()
+  const allowedTcbRaw = process.env.NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS?.trim()
 
-  const policy: RatlsPolicy = {
+  const policy: AtlasPolicy = {
     type: "dstack_tdx",
   }
 
@@ -95,7 +96,7 @@ export function createPolicyFromEnv(): RatlsPolicy {
     policy.os_image_hash = osHash
   }
 
-  // Add app compose - prefer NEXT_PUBLIC_RATLS_APP_COMPOSE (full JSON)
+  // Add app compose - prefer NEXT_PUBLIC_ATLAS_APP_COMPOSE (full JSON)
   if (appComposeRaw) {
     try {
       const decoded = atob(appComposeRaw)
@@ -105,7 +106,7 @@ export function createPolicyFromEnv(): RatlsPolicy {
       try {
         policy.app_compose = JSON.parse(appComposeRaw)
       } catch {
-        console.error("[RA-TLS] Failed to parse NEXT_PUBLIC_RATLS_APP_COMPOSE")
+        console.error("[aTLS] Failed to parse NEXT_PUBLIC_ATLAS_APP_COMPOSE")
       }
     }
   } else if (dockerCompose || allowedEnvsRaw) {
@@ -137,11 +138,11 @@ export function createPolicyFromEnv(): RatlsPolicy {
  * - Otherwise in development, uses DEV_POLICY
  * - In production without measurements, returns default policy (library will require measurements)
  */
-export function getPolicy(): RatlsPolicy {
+export function getPolicy(): AtlasPolicy {
   const hasMeasurements = Boolean(
-    process.env.NEXT_PUBLIC_RATLS_EXPECTED_MRTD ||
-    process.env.NEXT_PUBLIC_RATLS_EXPECTED_RTMR0 ||
-    process.env.NEXT_PUBLIC_RATLS_EXPECTED_OS_HASH
+    process.env.NEXT_PUBLIC_ATLAS_EXPECTED_MRTD ||
+    process.env.NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0 ||
+    process.env.NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH
   )
 
   if (hasMeasurements) {
@@ -152,8 +153,8 @@ export function getPolicy(): RatlsPolicy {
   if (process.env.NODE_ENV !== "production") {
     if (typeof window !== "undefined") {
       console.warn(
-        "[RA-TLS] Using development policy without measurement verification. " +
-        "Configure NEXT_PUBLIC_RATLS_EXPECTED_* for production."
+        "[aTLS] Using development policy without measurement verification. " +
+        "Configure NEXT_PUBLIC_ATLAS_EXPECTED_* for production."
       )
     }
     return DEV_POLICY
@@ -163,82 +164,30 @@ export function getPolicy(): RatlsPolicy {
   return { type: "dstack_tdx" }
 }
 
-export type RatlsClientConfig = {
+export type AtlasClientConfig = {
   proxyUrl: string
   targetHost: string
-  policy: RatlsPolicy
+  policy: AtlasPolicy
   serverName?: string
   defaultHeaders?: Record<string, string>
 }
 
-type RatlsFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response & { attestation: RatlsAttestationResult }>
+type AtlasFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response & { attestation: AtlasAttestationResult }>
 
-type CreateRatlsFetchFn = (options: {
+type CreateAtlasFetchFn = (options: {
   proxyUrl: string
   targetHost: string
-  policy: RatlsPolicy
+  policy: AtlasPolicy
   serverName?: string
   defaultHeaders?: Record<string, string>
-  onAttestation?: (attestation: RatlsAttestationResult) => void | Promise<void>
-}) => RatlsFetch
+  onAttestation?: (attestation: AtlasAttestationResult) => void | Promise<void>
+}) => AtlasFetch
 
-/**
- * Expected SHA-384 hash of the WASM binary.
- * Update when WASM is rebuilt: shasum -a 384 lib/ratls-wasm/ratls_wasm_bg.wasm | awk '{print $1}'
- */
-const EXPECTED_WASM_HASH = "6cacb2d6cadb1eefc22f622857961fa6082c0d62011a8d4c472d87bff9f9acccfd46db6c66f5f6f5fec5a15bf57759c1"
+let wasmInitPromise: Promise<{ createAtlasFetch: CreateAtlasFetchFn }> | null = null
 
-const SKIP_WASM_INTEGRITY_CHECK = process.env.NODE_ENV !== "production" &&
-  process.env.NEXT_PUBLIC_SKIP_WASM_INTEGRITY_CHECK === "true"
-
-function arrayBufferToHex(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("")
-}
-
-async function verifyWasmIntegrity(wasmUrl: string): Promise<void> {
-  if (SKIP_WASM_INTEGRITY_CHECK) {
-    console.warn("[RA-TLS] Skipping WASM integrity check (development mode)")
-    return
-  }
-
-  // crypto.subtle requires a secure context (HTTPS or localhost)
-  // In development on HTTP, skip the check with a warning
-  if (!crypto?.subtle) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[RA-TLS] crypto.subtle not available (requires HTTPS). Skipping WASM integrity check in development.")
-      return
-    }
-    throw new Error("WASM integrity verification requires a secure context (HTTPS)")
-  }
-
-  const response = await fetch(wasmUrl)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch WASM: ${response.status}`)
-  }
-  const wasmBytes = await response.arrayBuffer()
-  const hashBuffer = await crypto.subtle.digest("SHA-384", wasmBytes)
-  const actualHash = arrayBufferToHex(hashBuffer)
-
-  if (actualHash !== EXPECTED_WASM_HASH) {
-    throw new Error("WASM integrity check failed")
-  }
-}
-
-type WarmupConnectionFn = (options: {
-  proxyUrl: string
-  targetHost: string
-  policy: RatlsPolicy
-  serverName?: string
-  onAttestation?: (attestation: RatlsAttestationResult) => void | Promise<void>
-}) => Promise<RatlsAttestationResult>
-
-let wasmInitPromise: Promise<{ createRatlsFetch: CreateRatlsFetchFn; warmupConnection: WarmupConnectionFn }> | null = null
-let wasmIntegrityVerified = false
-
-async function loadWasmModule(): Promise<{ createRatlsFetch: CreateRatlsFetchFn; warmupConnection: WarmupConnectionFn }> {
+async function loadWasmModule(): Promise<{ createAtlasFetch: CreateAtlasFetchFn }> {
   if (typeof window === "undefined") {
-    throw new Error("RA-TLS WASM can only be used in browser environment")
+    throw new Error("aTLS WASM can only be used in browser environment")
   }
 
   if (wasmInitPromise) {
@@ -246,17 +195,10 @@ async function loadWasmModule(): Promise<{ createRatlsFetch: CreateRatlsFetchFn;
   }
 
   wasmInitPromise = (async () => {
-    // Verify WASM integrity before loading
-    if (!wasmIntegrityVerified) {
-      const wasmPath = new URL("./ratls-wasm/ratls_wasm_bg.wasm", import.meta.url).href
-      await verifyWasmIntegrity(wasmPath)
-      wasmIntegrityVerified = true
-    }
-
-    const mod = await import("./ratls-wasm/ratls-fetch.js")
+    // Package integrity is verified by npm/pnpm during installation
+    const mod = await import("@concrete-security/atlas-wasm")
     return {
-      createRatlsFetch: mod.createRatlsFetch as CreateRatlsFetchFn,
-      warmupConnection: mod.warmupConnection as WarmupConnectionFn,
+      createAtlasFetch: mod.createRatlsFetch as CreateAtlasFetchFn,
     }
   })()
 
@@ -264,16 +206,16 @@ async function loadWasmModule(): Promise<{ createRatlsFetch: CreateRatlsFetchFn;
 }
 
 /**
- * Create an RA-TLS enabled fetch client.
+ * Create an aTLS enabled fetch client.
  * Policy validation is handled by the WASM library.
  */
-export async function createRatlsClient(
-  config: RatlsClientConfig,
-  onAttestation?: (attestation: RatlsAttestationResult) => void | Promise<void>
-): Promise<RatlsFetch> {
-  const { createRatlsFetch } = await loadWasmModule()
+export async function createAtlasClient(
+  config: AtlasClientConfig,
+  onAttestation?: (attestation: AtlasAttestationResult) => void | Promise<void>
+): Promise<AtlasFetch> {
+  const { createAtlasFetch } = await loadWasmModule()
 
-  return createRatlsFetch({
+  return createAtlasFetch({
     proxyUrl: config.proxyUrl,
     targetHost: config.targetHost,
     policy: config.policy,
@@ -284,30 +226,57 @@ export async function createRatlsClient(
 }
 
 /**
- * Pre-establish the RA-TLS connection on page load.
+ * Pre-establish the aTLS connection on page load.
  * This performs the TLS handshake and attestation verification immediately,
  * so users don't have to wait when they send their first message.
  *
- * The connection is cached and reused by subsequent createRatlsClient calls.
+ * The connection is cached and reused by subsequent createAtlasClient calls.
  */
-export async function warmupRatlsConnection(
-  config: RatlsClientConfig,
-  onAttestation?: (attestation: RatlsAttestationResult) => void | Promise<void>
-): Promise<RatlsAttestationResult> {
-  const { warmupConnection } = await loadWasmModule()
+export async function warmupAtlasConnection(
+  config: AtlasClientConfig,
+  onAttestation?: (attestation: AtlasAttestationResult) => void | Promise<void>
+): Promise<AtlasAttestationResult> {
+  const { createAtlasFetch } = await loadWasmModule()
 
-  return warmupConnection({
+  // Capture attestation result from callback
+  let attestationResult: AtlasAttestationResult | null = null
+
+  const fetch = createAtlasFetch({
     proxyUrl: config.proxyUrl,
     targetHost: config.targetHost,
     policy: config.policy,
     serverName: config.serverName,
-    onAttestation,
+    onAttestation: async (att) => {
+      attestationResult = att
+      if (onAttestation) {
+        await onAttestation(att)
+      }
+    },
   })
+
+  // Make a lightweight request to establish the connection
+  // The OPTIONS method with / path is commonly supported and doesn't require a body
+  try {
+    const response = await fetch("/", { method: "OPTIONS" })
+    // If we got a response, attestation should have been captured
+    if (attestationResult) {
+      return attestationResult
+    }
+    // Fallback: extract attestation from response
+    return (response as Response & { attestation: AtlasAttestationResult }).attestation
+  } catch {
+    // Even if the request fails (e.g., 404), attestation should still be available
+    // since it happens during TLS handshake before HTTP request
+    if (attestationResult) {
+      return attestationResult
+    }
+    throw new Error("Failed to establish aTLS connection")
+  }
 }
 
-const defaultProxyUrl = process.env.NEXT_PUBLIC_RATLS_PROXY_URL ?? ""
+const defaultProxyUrl = process.env.NEXT_PUBLIC_ATLAS_PROXY_URL ?? ""
 
-export function getRatlsProxyUrl(): string | null {
+export function getAtlasProxyUrl(): string | null {
   const value = defaultProxyUrl.trim()
   return value.length > 0 ? value : null
 }
@@ -327,8 +296,8 @@ export function deriveTargetHost(baseUrl: string): string {
   }
 }
 
-export function isRatlsConfigured(): boolean {
-  return getRatlsProxyUrl() !== null
+export function isAtlasConfigured(): boolean {
+  return getAtlasProxyUrl() !== null
 }
 
 /** Parsed service from docker-compose */
@@ -347,7 +316,7 @@ type DockerComposeFile = {
 /**
  * Parse the app_compose docker_compose_file to extract service information.
  */
-export function parseAppComposeServices(policy: RatlsPolicy): ParsedService[] {
+export function parseAppComposeServices(policy: AtlasPolicy): ParsedService[] {
   if (!policy.app_compose?.docker_compose_file) return []
 
   try {
@@ -381,7 +350,7 @@ export function parseAppComposeServices(policy: RatlsPolicy): ParsedService[] {
 
     return services
   } catch {
-    console.error("[RA-TLS] Failed to parse docker-compose file")
+    console.error("[aTLS] Failed to parse docker-compose file")
     return []
   }
 }

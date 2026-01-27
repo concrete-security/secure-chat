@@ -11,10 +11,10 @@
     "lint": "next lint",
     "start": "next start",
     "test:e2e": "playwright test",
-    "test:unit": "vitest run",
-    "build:ratls-wasm": "./scripts/build-ratls-wasm.sh"
+    "test:unit": "vitest run"
   },
   "dependencies": {
+    "@concrete-security/atlas-wasm": "0.1.0",
     "@emotion/is-prop-valid": "latest",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "latest",

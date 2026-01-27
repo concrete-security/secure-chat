@@ -9,7 +9,7 @@ const nextConfig = {
       config.externals = Array.isArray(config.externals) ? config.externals : config.externals ? [config.externals] : []
       config.externals.push("tr46")
     }
-    // Enable WebAssembly support for RA-TLS WASM module
+    // Enable WebAssembly support for aTLS WASM module
     config.experiments = {
       ...config.experiments,
       asyncWebAssembly: true,
@@ -21,7 +21,7 @@ const nextConfig = {
 
     // Content-Security-Policy
     // - In dev we allow inline/eval + localhost for Next.js tooling.
-    // - In prod we disallow eval but allow wasm-unsafe-eval for WebAssembly (required by ratls-wasm)
+    // - In prod we disallow eval but allow wasm-unsafe-eval for WebAssembly (required by atlas-wasm)
     //   and only allow HTTPS/WSS connects (plus Supabase) to reduce exfil paths.
     // - Allow Vercel Live for preview deployments and Next.js inline scripts
     const devCsp = "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://localhost:3000 ws: wss: https:; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'; object-src 'none';";

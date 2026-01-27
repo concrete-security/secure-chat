@@ -150,7 +150,7 @@ export async function* streamConfidentialChat(
 
   try {
     if (!options.fetchImpl) {
-      throw new Error("RA-TLS fetch implementation is required for model connections. Secure channel not established.")
+      throw new Error("aTLS fetch implementation is required for model connections. Secure channel not established.")
     }
     const fetchFn = options.fetchImpl
     const response = await fetchFn(endpoint, {

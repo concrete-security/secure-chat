@@ -3,7 +3,7 @@
 Fetch TDX quote from a TEE and extract all policy values.
 
 This script fetches the TDX quote from a TEE's /tdx_quote endpoint and extracts
-all the values needed to configure RATLS policy verification, including:
+all the values needed to configure ATLAS policy verification, including:
 - Bootchain measurements (MRTD, RTMR0-2) from TDX quote
 - OS image hash from event log
 - App compose configuration from tcb_info field
@@ -134,15 +134,15 @@ def main():
 
     print("# Bootchain Measurements (from TDX Quote)")
     print("# These identify the TEE firmware and initial boot state")
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_MRTD="{measurements["mrtd"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR0="{measurements["rtmr0"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR1="{measurements["rtmr1"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR2="{measurements["rtmr2"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_MRTD="{measurements["mrtd"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0="{measurements["rtmr0"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1="{measurements["rtmr1"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2="{measurements["rtmr2"]}"')
     print()
 
     print("# OS Image Hash (from Event Log)")
     if event_data.get('os_image_hash'):
-        print(f'NEXT_PUBLIC_RATLS_EXPECTED_OS_HASH="{event_data["os_image_hash"]}"')
+        print(f'NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH="{event_data["os_image_hash"]}"')
     else:
         print("# WARNING: os-image-hash not found in event log")
     print()
@@ -194,13 +194,13 @@ def main():
     print("Copy these to your .env file:")
     print("=" * 60)
     print()
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_MRTD="{measurements["mrtd"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR0="{measurements["rtmr0"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR1="{measurements["rtmr1"]}"')
-    print(f'NEXT_PUBLIC_RATLS_EXPECTED_RTMR2="{measurements["rtmr2"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_MRTD="{measurements["mrtd"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0="{measurements["rtmr0"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1="{measurements["rtmr1"]}"')
+    print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2="{measurements["rtmr2"]}"')
     os_hash = tcb_os_image_hash or event_data.get('os_image_hash')
     if os_hash:
-        print(f'NEXT_PUBLIC_RATLS_EXPECTED_OS_HASH="{os_hash}"')
+        print(f'NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH="{os_hash}"')
     print()
 
     # Output app_compose from tcb_info (this is the authoritative source)
@@ -212,7 +212,7 @@ def main():
 
         # Base64 encode the full app_compose JSON string
         app_compose_b64 = base64.b64encode(app_compose_str.encode()).decode()
-        print(f'NEXT_PUBLIC_RATLS_APP_COMPOSE="{app_compose_b64}"')
+        print(f'NEXT_PUBLIC_ATLAS_APP_COMPOSE="{app_compose_b64}"')
         print()
         print(f"# compose-hash: {tcb_compose_hash}")
         if app_compose_verified:
@@ -274,11 +274,11 @@ The app_compose is extracted directly from the TEE's tcb_info field.
 This is the authoritative source and will match the compose-hash.
 
 For FULL verification (bootchain + OS + app_compose):
-  - Use all the values above including NEXT_PUBLIC_RATLS_DOCKER_COMPOSE
+  - Use all the values above including NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE
   - The compose-hash will be verified: {compose_hash}
 
 For PARTIAL verification (bootchain + OS only):
-  - Don't set NEXT_PUBLIC_RATLS_DOCKER_COMPOSE in your .env
+  - Don't set NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE in your .env
   - The library will skip app_compose verification
   - This still verifies the TEE firmware and OS image
 """.format(compose_hash=tcb_compose_hash or event_data.get('compose_hash', 'N/A')))
