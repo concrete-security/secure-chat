@@ -14,8 +14,69 @@ Behind the scenes, the service uses the `dstack_sdk` to communicate with the dst
 
 - `GET /health` - Service health check
 - `POST /tdx_quote` - Generate TDX attestation quote with custom report data
+- `GET /debug/ekm` - Debug endpoint available only via `attestation_service_with_debug.py` (for testing)
 
 You also have API docs at `/docs` and `/redoc`.
+
+## Security: EKM Channel Binding with HMAC
+
+This service implements TLS channel binding using Exported Keying Material (EKM) as defined in [RFC 9266](https://datatracker.ietf.org/doc/rfc9266/).
+
+### Architecture
+
+The attestation service **does not** handle TLS connections directly. Instead, it relies on a reverse proxy (such as nginx) that:
+1. Terminates TLS connections from clients
+2. Extracts the TLS EKM from the connection
+3. Forwards the EKM to the attestation service via the `X-TLS-EKM-Channel-Binding` header
+
+To prevent header forgery attacks (e.g., if the reverse proxy is compromised or an attacker bypasses it), EKM headers are cryptographically signed with HMAC-SHA256.
+
+### Configuration
+
+**CRITICAL**: Set `EKM_SHARED_SECRET` to a cryptographically secure random value:
+
+```bash
+# Generate a secure secret (at least 32 bytes)
+EKM_SHARED_SECRET=$(openssl rand -hex 32)
+```
+
+### Security Properties
+
+- **Format**: EKM headers use the format `{ekm_hex}:{hmac_hex}` (129 characters total)
+- **Validation**: HMAC is validated using constant-time comparison to prevent timing attacks
+- **Defense in Depth**: TEE/Network isolation (proxy and service running inside the same TEE, and the attestation service is only accessible to the proxy) + HMAC validation provide multiple security layers
+- **Secret Requirements**:
+  - Minimum 32 bytes (256 bits) recommended
+  - Must match the secret configured in the reverse proxy (e.g., nginx)
+  - Rotate periodically (recommended)
+  - Never commit to version control
+
+### How It Works
+
+1. Reverse proxy extracts TLS EKM from the client connection
+2. Reverse proxy computes `HMAC-SHA256(ekm_hex, EKM_SHARED_SECRET)`
+3. Reverse proxy forwards header as `{ekm_hex}:{hmac_hex}`
+4. Attestation service validates HMAC before trusting EKM
+5. Invalid signatures return HTTP 403 Forbidden
+
+This prevents attackers from forging EKM values even if they compromise the reverse proxy or bypass network isolation.
+
+## Testing with Debug Endpoints
+
+For testing purposes, a separate script `attestation_service_with_debug.py` is available that adds debug endpoints to the production service. **This script should never be used in production.**
+
+### Running with Debug Endpoints
+
+```bash
+# Development mode with debug endpoints
+uv sync
+uv run fastapi run attestation_service_with_debug.py --port 8080 --reload
+```
+
+The debug script adds:
+- `GET /debug/ekm` - Verify EKM header forwarding and HMAC validation
+
+These endpoints are used by the integration test suite in `../test_cvm.py`.
 
 ## Requirements
 

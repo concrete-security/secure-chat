@@ -12,6 +12,7 @@ dependencies = [
 [dependency-groups]
 test = [
     "requests",
+    "pytest",
 ]
 
 dev = [

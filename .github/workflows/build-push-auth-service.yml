@@ -115,6 +115,7 @@ jobs:
       - name: Stop and remove test container
         if: always()
         run: |
+          docker container logs auth-service-test || true
           docker stop auth-service-test || true
           docker rm auth-service-test || true
 

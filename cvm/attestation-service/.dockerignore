@@ -1,3 +1,6 @@
 __pycache__/
 venv/
 .venv/
+
+# don't copy debug service by mistake
+attestation_service_with_debug.py
