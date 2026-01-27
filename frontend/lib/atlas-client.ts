@@ -255,9 +255,9 @@ export async function warmupAtlasConnection(
   })
 
   // Make a lightweight request to establish the connection
-  // The OPTIONS method with / path is commonly supported and doesn't require a body
+  // Use GET /health which should return a proper response with body
   try {
-    const response = await fetch("/", { method: "OPTIONS" })
+    const response = await fetch("/health", { method: "GET" })
     // If we got a response, attestation should have been captured
     if (attestationResult) {
       return attestationResult
