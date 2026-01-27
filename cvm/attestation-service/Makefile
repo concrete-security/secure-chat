@@ -21,6 +21,7 @@ help:
 	@echo "🚀 Run Commands:"
 	@echo "  run         Run the service in Docker container (builds if needed)"
 	@echo "  dev         Run in development mode with hot reload (uses uv)"
+	@echo "  dev-debug   Run in development mode with debug endpoints enabled"
 	@echo "  stop        Stop the running Docker container"
 	@echo ""
 	@echo "🧪 Test Commands:"
@@ -64,6 +65,10 @@ endif
 dev:
 	uv sync
 	uv run fastapi run attestation_service.py --port $(HOST_PORT) --reload
+
+dev-debug:
+	uv sync
+	uv run fastapi run attestation_service_with_debug.py --port $(HOST_PORT) --reload
 
 docs:
 	@echo "API documentation available at:"

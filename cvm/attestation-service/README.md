@@ -14,7 +14,7 @@ Behind the scenes, the service uses the `dstack_sdk` to communicate with the dst
 
 - `GET /health` - Service health check
 - `POST /tdx_quote` - Generate TDX attestation quote with custom report data
-- `GET /debug/ekm` - Debug endpoint for EKM header verification (requires `DEBUG_MODE=true`)
+- `GET /debug/ekm` - Debug endpoint available only via `attestation_service_with_debug.py` (for testing)
 
 You also have API docs at `/docs` and `/redoc`.
 
@@ -60,6 +60,23 @@ EKM_SHARED_SECRET=$(openssl rand -hex 32)
 5. Invalid signatures return HTTP 403 Forbidden
 
 This prevents attackers from forging EKM values even if they compromise the reverse proxy or bypass network isolation.
+
+## Testing with Debug Endpoints
+
+For testing purposes, a separate script `attestation_service_with_debug.py` is available that adds debug endpoints to the production service. **This script should never be used in production.**
+
+### Running with Debug Endpoints
+
+```bash
+# Development mode with debug endpoints
+uv sync
+uv run fastapi run attestation_service_with_debug.py --port 8080 --reload
+```
+
+The debug script adds:
+- `GET /debug/ekm` - Verify EKM header forwarding and HMAC validation
+
+These endpoints are used by the integration test suite in `../test_cvm.py`.
 
 ## Requirements
 

@@ -6,3 +6,6 @@ __pycache__
 dist
 build
 .pytest_cache
+
+# don't copy nginx dev config by mistake
+nginx_conf/https-dev.conf

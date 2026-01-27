@@ -31,6 +31,9 @@ services:
       - EMAIL=test@test.com
       # Dev-only shared secret for EKM HMAC (CHANGE IN PRODUCTION!)
       - EKM_SHARED_SECRET=dev-ekm-secret-change-in-production-min-32-chars
+    # Mount dev nginx config that includes debug endpoint
+    volumes:
+      - ./cert-manager/nginx_conf/https-dev.conf:/app/nginx_conf/https.conf:ro
     configs:
       - source: acme_test_token_1
         target: /acme-challenge/.well-known/acme-challenge/test-challenge-token-dev
@@ -47,10 +50,13 @@ services:
     build:
       context: ./attestation-service
       dockerfile: Dockerfile
+    # Mount debug script to enable debug endpoint in dev
+    volumes:
+      - ./attestation-service/attestation_service_with_debug.py:/app/attestation_service_with_debug.py:ro
     environment:
       - WORKERS=1
-      # Enable debug mode to expose /debug/ekm endpoint for testing
-      - DEBUG_MODE=true
+      # Use debug script in dev mode
+      - SERVICE_SCRIPT=attestation_service_with_debug.py
       # Dev-only shared secret for EKM HMAC (must match nginx)
       - EKM_SHARED_SECRET=dev-ekm-secret-change-in-production-min-32-chars
     deploy:
