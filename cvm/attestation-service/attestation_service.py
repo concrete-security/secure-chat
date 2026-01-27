@@ -4,15 +4,17 @@ Attestation Service
 Provides TDX attestation endpoints using the dstack_sdk.
 """
 
+import asyncio
 import hashlib
 import hmac
 import logging
 import os
 import secrets
 import time
+from contextlib import asynccontextmanager
 from typing import Optional, Union
 
-from dstack_sdk import DstackClient, GetQuoteResponse
+from dstack_sdk import AsyncDstackClient, GetQuoteResponse
 from dstack_sdk.dstack_client import TcbInfoV05x
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +25,9 @@ HEADER_TLS_EKM_CHANNEL_BINDING = "X-TLS-EKM-Channel-Binding"
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+# Global async dstack client (initialized at startup)
+dstack_client: Optional[AsyncDstackClient] = None
 
 
 # TODO: This is to support both legacy and EKM modes
@@ -47,11 +52,35 @@ class QuoteResponse(BaseModel):
     error: Optional[str] = None
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager for FastAPI app.
+    Initializes and cleans up the async dstack client.
+    """
+    global dstack_client
+
+    logger.info("Initializing async dstack client...")
+    try:
+        dstack_client = AsyncDstackClient()
+    except Exception as e:
+        # This will cause HTTP 500 errors when getting quotes,
+        # but allows the app to start for testing the service in a non-TEE environment
+        logger.error(f"Failed to initialize dstack client: {e}")
+
+    yield
+
+    logger.info("Shutting down async dstack client...")
+    # AsyncDstackClient cleanup (if needed)
+    dstack_client = None
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Attestation Service",
     description="TDX attestation endpoints using dstack_sdk",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Validate EKM_SHARED_SECRET at startup
@@ -207,10 +236,20 @@ async def post_tdx_quote(request: Request, data: ReportDataRequest):
             raise RequestValidationError(
                 "Exactly one of nonce_hex, report_data_hex, or report_data must be provided"
             )
-        # Instantiate dstack client before use
-        dstack_client = DstackClient()
-        quote = dstack_client.get_quote(report_data)
-        tcb_info = dstack_client.info().tcb_info
+
+        # Use the shared async dstack client
+        if dstack_client is None:
+            logger.error("Dstack client not initialized")
+            raise HTTPException(
+                status_code=500,
+                detail="Server not ready",
+            )
+
+        # Run both operations concurrently for better performance
+        quote, info_response = await asyncio.gather(
+            dstack_client.get_quote(report_data), dstack_client.info()
+        )
+        tcb_info = info_response.tcb_info
 
         logger.info("Successfully obtained TDX quote")
 
