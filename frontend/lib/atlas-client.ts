@@ -264,13 +264,15 @@ export async function warmupAtlasConnection(
     }
     // Fallback: extract attestation from response
     return (response as Response & { attestation: AtlasAttestationResult }).attestation
-  } catch {
+  } catch (error) {
     // Even if the request fails (e.g., 404), attestation should still be available
     // since it happens during TLS handshake before HTTP request
     if (attestationResult) {
       return attestationResult
     }
-    throw new Error("Failed to establish aTLS connection")
+    // Preserve the original error message for debugging
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to establish aTLS connection: ${message}`)
   }
 }
 
