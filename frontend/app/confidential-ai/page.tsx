@@ -1936,7 +1936,7 @@ function ConfidentialAIContent() {
                   const label = isUser ? "You" : assistantName
 
                   const bubbleClass = isUser
-                    ? "w-full sm:max-w-[85%] md:max-w-3xl self-end whitespace-pre-wrap break-words rounded-3xl bg-brand-gradient px-6 py-4 text-left text-white shadow-md dark:shadow-none"
+                    ? "w-fit sm:max-w-[85%] md:max-w-3xl self-end whitespace-pre-wrap break-words rounded-3xl bg-brand-gradient px-6 py-4 text-left text-white shadow-md dark:shadow-none"
                     : "w-full sm:max-w-[85%] md:max-w-4xl self-start whitespace-pre-wrap break-words rounded-none bg-transparent px-0 py-0 text-left text-foreground leading-7"
 
                   const bubbleStyle: CSSProperties | undefined = isUser
@@ -2360,7 +2360,7 @@ function ConfidentialAIContent() {
         </DialogContent>
       </Dialog>
       <AtlsDetailsModal />
-      <FeedbackButton source="confidential" position="bottom-right" />
+      <FeedbackButton source="confidential" position="top-right" />
     </div>
   )
 }

@@ -131,7 +131,7 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
 
   // Wait for attestation (test mode auto-verifies since WebSocket can't be mocked)
   // Real attestation is tested in quote-verification.spec.ts
-  await expect(page.getByText("Protected and verified")).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByLabel("Proof of Confidentiality").getByText("Protected and verified")).toBeVisible({ timeout: 15_000 })
 
   const transcript = page.getByRole("log", { name: "Confidential space transcript" })
   await expect(transcript).toContainText(HERO_PROMPT, { timeout: 15_000 })
