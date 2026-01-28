@@ -8,14 +8,14 @@ FROM nginx@sha256:61e01287e546aac28a3f56839c136b31f590273f3b41187a36f46f6a03bbfe
 # Define nginx version (must match runtime image)
 ENV NGINX_VERSION=1.29.2
 
-# Install build dependencies (pinned versions for reproducibility)
+# Install build dependencies
 RUN apk add --no-cache \
-    gcc=14.2.0-r6 \
-    musl-dev=1.2.5-r10 \
-    make=4.4.1-r3 \
-    openssl-dev=3.5.4-r0 \
-    pcre2-dev=10.46-r0 \
-    wget=1.25.0-r1
+    gcc~=14.2 \
+    musl-dev~=1.2 \
+    make~=4.4 \
+    openssl-dev~=3.5 \
+    pcre2-dev~=10.46 \
+    wget~=1.25
 
 # Download nginx source matching the version
 RUN wget --progress=dot:giga "http://nginx.org/download/nginx-${NGINX_VERSION}.tar.gz" && \
@@ -54,8 +54,8 @@ COPY --from=ghcr.io/astral-sh/uv@sha256:f459f6f73a8c4ef5d69f4e6fbbdb8af751d6fa40
 
 EXPOSE 80 443
 
-# Install supervisor (pinned version for reproducibility)
-RUN apk add --no-cache supervisor=4.2.5-r5
+# Install supervisor
+RUN apk add --no-cache supervisor~=4.2
 
 # Create app directory
 WORKDIR /app
