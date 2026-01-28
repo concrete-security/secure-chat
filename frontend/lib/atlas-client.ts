@@ -62,9 +62,7 @@ export const DEV_POLICY: AtlasPolicy = {
  * - NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1
  * - NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2
  * - NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH
- * - NEXT_PUBLIC_ATLAS_APP_COMPOSE (base64 encoded JSON string - preferred)
- * - NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE (base64 encoded - legacy, use APP_COMPOSE instead)
- * - NEXT_PUBLIC_ATLAS_ALLOWED_ENVS (comma-separated - legacy, use APP_COMPOSE instead)
+ * - NEXT_PUBLIC_ATLAS_APP_COMPOSE (base64 encoded JSON string)
  * - NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS (comma-separated, defaults to "UpToDate")
  */
 export function createPolicyFromEnv(): AtlasPolicy {
@@ -74,8 +72,6 @@ export function createPolicyFromEnv(): AtlasPolicy {
   const rtmr2 = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2?.trim()
   const osHash = process.env.NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH?.trim()
   const appComposeRaw = process.env.NEXT_PUBLIC_ATLAS_APP_COMPOSE?.trim()
-  const dockerCompose = process.env.NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE?.trim()
-  const allowedEnvsRaw = process.env.NEXT_PUBLIC_ATLAS_ALLOWED_ENVS?.trim()
   const allowedTcbRaw = process.env.NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS?.trim()
 
   const policy: AtlasPolicy = {
@@ -96,7 +92,7 @@ export function createPolicyFromEnv(): AtlasPolicy {
     policy.os_image_hash = osHash
   }
 
-  // Add app compose - prefer NEXT_PUBLIC_ATLAS_APP_COMPOSE (full JSON)
+  // Add app compose from NEXT_PUBLIC_ATLAS_APP_COMPOSE
   if (appComposeRaw) {
     try {
       const decoded = atob(appComposeRaw)
@@ -108,19 +104,6 @@ export function createPolicyFromEnv(): AtlasPolicy {
       } catch {
         console.error("[aTLS] Failed to parse NEXT_PUBLIC_ATLAS_APP_COMPOSE")
       }
-    }
-  } else if (dockerCompose || allowedEnvsRaw) {
-    // Legacy: separate env vars for docker_compose_file and allowed_envs
-    policy.app_compose = {}
-    if (dockerCompose) {
-      try {
-        policy.app_compose.docker_compose_file = atob(dockerCompose)
-      } catch {
-        policy.app_compose.docker_compose_file = dockerCompose
-      }
-    }
-    if (allowedEnvsRaw) {
-      policy.app_compose.allowed_envs = allowedEnvsRaw.split(",").map((s) => s.trim()).filter(Boolean)
     }
   }
 
