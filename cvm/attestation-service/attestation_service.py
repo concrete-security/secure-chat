@@ -11,6 +11,7 @@ import logging
 import os
 import secrets
 import time
+import tomllib
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -85,7 +86,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Attestation Service",
     description="TDX attestation endpoints using dstack_sdk",
-    version="0.1.0",
+    version=tomllib.load(open("pyproject.toml", "rb"))["project"]["version"],
     lifespan=lifespan,
 )
 
