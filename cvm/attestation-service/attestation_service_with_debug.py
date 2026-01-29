@@ -11,10 +11,11 @@ testing environments to verify EKM header forwarding and HMAC validation.
 import hashlib
 import hmac
 import secrets
+
 from fastapi import Request
 
 # Import the production app and necessary constants
-from attestation_service import HEADER_TLS_EKM_CHANNEL_BINDING, EKM_SHARED_SECRET, app
+from attestation_service import EKM_SHARED_SECRET, HEADER_TLS_EKM_CHANNEL_BINDING, app
 
 
 @app.get("/debug/ekm")

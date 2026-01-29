@@ -6,7 +6,10 @@ This script tests all CVM components through the nginx proxy (just like end-user
 
 try:
     import argparse
+    import hashlib
+    import hmac
     import json
+    import secrets
     import ssl
     import sys
     import time
@@ -488,12 +491,33 @@ class CVMTester:
         self._print_test_header(f"Testing Attestation Service Endpoints ({mode} Mode)")
 
         try:
-            # Test TDX quote endpoint
-            payload = {"report_data": "testdata"}
+            # Generate a random nonce (32 bytes = 64 hex characters)
+            nonce_hex = secrets.token_hex(32)
+
+            # Generate a random EKM value (32 bytes = 64 hex characters)
+            ekm_hex = secrets.token_hex(32)
+
+            # Should match what's in docker-compose.dev.override.yml
+            ekm_secret = "test_shared_secret_for_ekm_validation_min_32_chars"
+
+            # Compute HMAC signature for the EKM header
+            hmac_value = hmac.new(
+                ekm_secret.encode("utf-8"),
+                bytes.fromhex(ekm_hex),
+                hashlib.sha256
+            ).hexdigest()
+
+            # Create signed EKM header
+            ekm_header = f"{ekm_hex}:{hmac_value}"
+
+            # Prepare payload and headers
+            payload = {"nonce_hex": nonce_hex}
+            headers = {"X-TLS-EKM-Channel-Binding": ekm_header}
 
             response = self.session.post(
                 f"{self.base_url}/tdx_quote",
                 json=payload,
+                headers=headers,
                 verify=self.verify_ssl,
                 timeout=3,
             )
@@ -543,7 +567,7 @@ class CVMTester:
                 'path': '/tdx_quote',
                 'name': 'TDX Quote (Attestation)',
                 'test_methods': ['OPTIONS', 'POST'],
-                'post_payload': {"report_data_hex": "1234567890abcdef"},
+                'post_payload': {"nonce_hex": secrets.token_hex(32)},
             },
             {
                 'path': '/v1/models',
@@ -622,11 +646,22 @@ class CVMTester:
 
                     # Test actual requests for allowed origin
                     headers = {'Origin': origin}
-                    
+
+                    # Add EKM header for attestation endpoint
+                    if path == '/tdx_quote':
+                        ekm_hex = secrets.token_hex(32)
+                        ekm_secret = "test_shared_secret_for_ekm_validation_min_32_chars"
+                        hmac_value = hmac.new(
+                            ekm_secret.encode("utf-8"),
+                            bytes.fromhex(ekm_hex),
+                            hashlib.sha256
+                        ).hexdigest()
+                        headers['X-TLS-EKM-Channel-Binding'] = f"{ekm_hex}:{hmac_value}"
+
                     for method in endpoint_info['test_methods']:
                         if method == 'OPTIONS':
                             continue  # Already tested above
-                            
+
                         try:
                             if method == 'GET':
                                 response = self.session.get(
