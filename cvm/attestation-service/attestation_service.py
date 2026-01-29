@@ -245,13 +245,25 @@ async def post_tdx_quote(request: Request, data: ReportDataRequest):
                 detail="Server not ready",
             )
 
-        # Run both operations concurrently for better performance
-        quote, info_response = await asyncio.gather(
-            dstack_client.get_quote(report_data), dstack_client.info()
-        )
-        tcb_info = info_response.tcb_info
+        try:
+            # Run both operations concurrently for better performance
+            quote, info_response = await asyncio.gather(
+                dstack_client.get_quote(report_data), dstack_client.info()
+            )
+            tcb_info = info_response.tcb_info
 
-        logger.info("Successfully obtained TDX quote")
+            logger.info("Successfully obtained TDX quote")
+        except Exception as e:
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            logger.exception(f"Error obtaining TDX quote or TCB info: {error_msg}", stack_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "success": False,
+                    "error": "Failed to obtain TDX quote or TCB info",
+                    "quote_type": "tdx",
+                },
+            )
 
         return QuoteResponse(
             success=True,
@@ -262,8 +274,9 @@ async def post_tdx_quote(request: Request, data: ReportDataRequest):
         )
 
     except Exception as e:
-        logger.error(f"Failed to get TDX quote: {e}")
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        logger.exception(f"Failed to get TDX quote: {error_msg}", stack_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": str(e), "quote_type": "tdx"},
+            detail={"success": False, "error": "Server failure", "quote_type": "tdx"},
         )
