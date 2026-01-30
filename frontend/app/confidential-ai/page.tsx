@@ -67,7 +67,7 @@ type StoredProviderSettings = {
 
 type AtlsConnectionState =
   | { status: "disconnected" }
-  | { status: "connecting" }
+  | { status: "connecting"; attempt?: number; maxAttempts?: number }
   | { status: "connected"; attestation: AtlasAttestationResult }
   | { status: "error"; error: string; category?: AtlsErrorCategory; hint?: string }
 
@@ -594,6 +594,14 @@ function ConfidentialAIContent() {
   }
 
   const connectAtls = useCallback(async () => {
+    // Connection settings
+    const MAX_ATTEMPTS = 3
+    const CONNECTION_TIMEOUT_MS = 30000 // 30 seconds per attempt
+    const RETRY_DELAYS = [1000, 2000, 4000] // Exponential backoff delays
+
+    // Categories that are worth retrying (transient failures)
+    const RETRYABLE_CATEGORIES: AtlsErrorCategory[] = ["proxy_connection", "timeout", "handshake"]
+
     // Clear previous logs on new connection attempt
     setAtlsLogs([])
 
@@ -629,78 +637,124 @@ function ConfidentialAIContent() {
     }
 
     const targetHost = deriveTargetHost(providerApiBase)
-    addAtlsLog("info", `Initiating connection to ${targetHost}`)
-    setAtlsState({ status: "connecting" })
+    const policy = getPolicy()
+    const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
 
-    try {
-      // Use the environment-appropriate policy (production or dev)
-      const policy = getPolicy()
-      const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
+    // Helper to wrap a promise with a timeout
+    const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+      return Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Connection timed out after ${ms / 1000}s`)), ms)
+        ),
+      ])
+    }
 
-      addAtlsLog("info", "Loading WASM attestation module...")
-      addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
+    // Attempt connection with retries
+    let lastError: CategorizedAtlsError | null = null
 
-      // Pre-establish the TLS connection immediately on page load
-      addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
-      addAtlsLog("info", "Establishing TLS connection...")
-      addAtlsLog("info", "Performing TLS handshake with TEE server...")
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const isRetry = attempt > 1
 
-      await warmupAtlasConnection(config, (att) => {
-        addAtlsLog("info", "Received attestation quote from server")
-        addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
-        addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
-        addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
+      if (isRetry) {
+        const delay = RETRY_DELAYS[attempt - 2] ?? RETRY_DELAYS[RETRY_DELAYS.length - 1]
+        addAtlsLog("info", `Retrying connection in ${delay / 1000}s... (attempt ${attempt}/${MAX_ATTEMPTS})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
 
-        if (policy.expected_bootchain?.mrtd) {
-          addAtlsLog("info", "Verifying MRTD measurement...")
-        }
-        if (policy.expected_bootchain?.rtmr0) {
-          addAtlsLog("info", "Verifying RTMR0 (firmware)...")
-        }
-        if (policy.expected_bootchain?.rtmr1) {
-          addAtlsLog("info", "Verifying RTMR1 (OS)...")
-        }
-        if (policy.expected_bootchain?.rtmr2) {
-          addAtlsLog("info", "Verifying RTMR2 (application)...")
-        }
-        if (policy.os_image_hash) {
-          addAtlsLog("info", "Verifying OS image hash...")
-        }
-        if (policy.app_compose?.docker_compose_file) {
-          addAtlsLog("info", "Verifying container image digests...")
+      addAtlsLog("info", `Initiating connection to ${targetHost}${isRetry ? ` (attempt ${attempt}/${MAX_ATTEMPTS})` : ""}`)
+      setAtlsState({ status: "connecting", attempt, maxAttempts: MAX_ATTEMPTS })
+
+      try {
+        if (!isRetry) {
+          addAtlsLog("info", "Loading WASM attestation module...")
+          addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
         }
 
-        if (att.trusted) {
-          addAtlsLog("success", "All attestation checks passed")
-          addAtlsLog("success", "Secure channel established")
-        } else {
-          addAtlsLog("warn", "Attestation verification completed with warnings")
+        addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
+        addAtlsLog("info", "Establishing TLS connection...")
+        addAtlsLog("info", "Performing TLS handshake with TEE server...")
+
+        await withTimeout(
+          warmupAtlasConnection(config, (att) => {
+            addAtlsLog("info", "Received attestation quote from server")
+            addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
+            addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
+            addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
+
+            if (policy.expected_bootchain?.mrtd) {
+              addAtlsLog("info", "Verifying MRTD measurement...")
+            }
+            if (policy.expected_bootchain?.rtmr0) {
+              addAtlsLog("info", "Verifying RTMR0 (firmware)...")
+            }
+            if (policy.expected_bootchain?.rtmr1) {
+              addAtlsLog("info", "Verifying RTMR1 (OS)...")
+            }
+            if (policy.expected_bootchain?.rtmr2) {
+              addAtlsLog("info", "Verifying RTMR2 (application)...")
+            }
+            if (policy.os_image_hash) {
+              addAtlsLog("info", "Verifying OS image hash...")
+            }
+            if (policy.app_compose?.docker_compose_file) {
+              addAtlsLog("info", "Verifying container image digests...")
+            }
+
+            if (att.trusted) {
+              addAtlsLog("success", "All attestation checks passed")
+              addAtlsLog("success", "Secure channel established")
+            } else {
+              addAtlsLog("warn", "Attestation verification completed with warnings")
+            }
+
+            setAtlsState({
+              status: "connected",
+              attestation: att,
+            })
+          }),
+          CONNECTION_TIMEOUT_MS
+        )
+
+        // Create the fetch client (will reuse the warmed-up connection)
+        const atlasFetch = await createAtlasClient(config)
+        atlasFetchRef.current = atlasFetch
+
+        // Success - exit the retry loop
+        return
+
+      } catch (error) {
+        // Categorize error for user-friendly display
+        const categorized = categorizeAtlsError(error)
+        lastError = categorized
+
+        // Log the error
+        const logMessage = process.env.NODE_ENV === "production"
+          ? `Connection failed: ${categorized.message}`
+          : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
+        addAtlsLog("error", logMessage)
+
+        // Check if we should retry
+        const isRetryable = RETRYABLE_CATEGORIES.includes(categorized.category)
+        const hasMoreAttempts = attempt < MAX_ATTEMPTS
+
+        if (isRetryable && hasMoreAttempts) {
+          // Will retry in next iteration
+          continue
         }
 
-        setAtlsState({
-          status: "connected",
-          attestation: att,
-        })
-      })
+        // Non-retryable error or out of attempts - fail immediately
+        break
+      }
+    }
 
-      // Create the fetch client (will reuse the warmed-up connection)
-      const atlasFetch = await createAtlasClient(config)
-      atlasFetchRef.current = atlasFetch
-
-    } catch (error) {
-      // Categorize error for user-friendly display
-      const categorized = categorizeAtlsError(error)
-      // Show category-specific message in both dev and production
-      // Only include technical details in development logs
-      const logMessage = process.env.NODE_ENV === "production"
-        ? `Connection failed: ${categorized.message}`
-        : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
-      addAtlsLog("error", logMessage)
+    // All attempts failed - set final error state
+    if (lastError) {
       setAtlsState({
         status: "error",
-        error: categorized.message,
-        category: categorized.category,
-        hint: categorized.hint,
+        error: lastError.message,
+        category: lastError.category,
+        hint: lastError.hint,
       })
     }
   }, [atlsProxyUrl, providerApiBase, addAtlsLog])
@@ -736,7 +790,7 @@ function ConfidentialAIContent() {
         case "connecting":
           return (
             <div className={cn(badgeBase, "border-brand-primary/40 bg-brand-primary/10 text-brand-primary")}>
-              <Sparkles className="h-3.5 w-3.5" /> Connecting
+              <Sparkles className="h-3.5 w-3.5" /> Connecting{atlsState.attempt && atlsState.attempt > 1 ? ` (${atlsState.attempt}/${atlsState.maxAttempts})` : ""}
             </div>
           )
         case "error":
@@ -836,7 +890,7 @@ function ConfidentialAIContent() {
               )}
             >
               <Sparkles className="h-4 w-4 inline-block mr-2 animate-pulse" />
-              Verifying server security...
+              Verifying server security...{atlsState.attempt && atlsState.attempt > 1 ? ` (attempt ${atlsState.attempt}/${atlsState.maxAttempts})` : ""}
             </div>
           )
         case "error":
