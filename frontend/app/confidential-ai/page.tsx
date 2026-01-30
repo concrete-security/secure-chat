@@ -37,7 +37,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
-import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy } from "@/lib/atlas-client"
+import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, categorizeAtlsError, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy, type AtlsErrorCategory, type CategorizedAtlsError } from "@/lib/atlas-client"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -69,7 +69,7 @@ type AtlsConnectionState =
   | { status: "disconnected" }
   | { status: "connecting" }
   | { status: "connected"; attestation: AtlasAttestationResult }
-  | { status: "error"; error: string }
+  | { status: "error"; error: string; category?: AtlsErrorCategory; hint?: string }
 
 type AtlsLogEntry = {
   timestamp: Date
@@ -688,14 +688,19 @@ function ConfidentialAIContent() {
       atlasFetchRef.current = atlasFetch
 
     } catch (error) {
-      // Sanitize error message in production
-      const errorMessage = process.env.NODE_ENV === "production"
-        ? "Failed to establish secure connection"
-        : error instanceof Error ? error.message : "Failed to establish aTLS connection"
-      addAtlsLog("error", `Connection failed: ${errorMessage}`)
+      // Categorize error for user-friendly display
+      const categorized = categorizeAtlsError(error)
+      // Show category-specific message in both dev and production
+      // Only include technical details in development logs
+      const logMessage = process.env.NODE_ENV === "production"
+        ? `Connection failed: ${categorized.message}`
+        : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
+      addAtlsLog("error", logMessage)
       setAtlsState({
         status: "error",
-        error: errorMessage,
+        error: categorized.message,
+        category: categorized.category,
+        hint: categorized.hint,
       })
     }
   }, [atlsProxyUrl, providerApiBase, addAtlsLog])
@@ -838,7 +843,12 @@ function ConfidentialAIContent() {
           return (
             <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
               <div className="border-l-2 border-rose-400 pl-3 text-rose-700 dark:text-rose-300">
-                {atlsState.error}
+                <div className="font-medium">{atlsState.error}</div>
+                {atlsState.hint && (
+                  <div className="mt-1 text-muted-foreground text-[11px]">
+                    {atlsState.hint}
+                  </div>
+                )}
               </div>
             </div>
           )
@@ -1777,13 +1787,6 @@ function ConfidentialAIContent() {
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
-
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-foreground">Security proof</p>
-                  <div className="border-l-2 border-[rgb(var(--vault-accent)/0.35)] pl-4 pr-3 py-2">
-                    <AtlsProofContent variant="sidebar" onViewDetails={() => setProofDetailsModalOpen(true)} />
-                  </div>
-                </div>
 
                 <div className="space-y-3">
                   <p className="text-xs font-semibold text-foreground">Reasoning</p>

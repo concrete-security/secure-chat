@@ -274,11 +274,11 @@ The app_compose is extracted directly from the TEE's tcb_info field.
 This is the authoritative source and will match the compose-hash.
 
 For FULL verification (bootchain + OS + app_compose):
-  - Use all the values above including NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE
+  - Use all the values above including NEXT_PUBLIC_ATLAS_APP_COMPOSE
   - The compose-hash will be verified: {compose_hash}
 
 For PARTIAL verification (bootchain + OS only):
-  - Don't set NEXT_PUBLIC_ATLAS_DOCKER_COMPOSE in your .env
+  - Don't set NEXT_PUBLIC_ATLAS_APP_COMPOSE in your .env
   - The library will skip app_compose verification
   - This still verifies the TEE firmware and OS image
 """.format(compose_hash=tcb_compose_hash or event_data.get('compose_hash', 'N/A')))

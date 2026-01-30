@@ -377,3 +377,115 @@ export const GITHUB_REPO_URL = "https://github.com/concrete-security/umbra"
 
 /** URL for the docker-compose.yml in the repository */
 export const DOCKER_COMPOSE_URL = `${GITHUB_REPO_URL}/blob/main/cvm/docker-compose.yml`
+
+/** Error category for aTLS connection failures */
+export type AtlsErrorCategory =
+  | "proxy_connection"      // Failed to connect to WebSocket proxy
+  | "handshake"             // TLS handshake failed
+  | "attestation_mismatch"  // Measurement/hash mismatch
+  | "policy_validation"     // Policy validation failed
+  | "timeout"               // Connection timed out
+  | "unknown"               // Unrecognized error
+
+/** Categorized aTLS error with user-friendly message */
+export type CategorizedAtlsError = {
+  category: AtlsErrorCategory
+  message: string           // User-friendly message for display
+  details?: string          // Technical details (dev only)
+  hint?: string             // Actionable hint for the user
+}
+
+/**
+ * Categorize an aTLS error into a user-friendly format.
+ * Maps raw error messages to specific categories with appropriate display messages.
+ */
+export function categorizeAtlsError(error: unknown): CategorizedAtlsError {
+  const rawMessage = error instanceof Error ? error.message : String(error)
+  const lowerMessage = rawMessage.toLowerCase()
+
+  // Proxy/WebSocket connection errors
+  if (
+    lowerMessage.includes("websocket") ||
+    lowerMessage.includes("proxy") ||
+    lowerMessage.includes("connect") ||
+    lowerMessage.includes("econnrefused") ||
+    lowerMessage.includes("network")
+  ) {
+    return {
+      category: "proxy_connection",
+      message: "Failed to connect to secure proxy",
+      details: rawMessage,
+      hint: "Check that the proxy URL is correct and the server is reachable",
+    }
+  }
+
+  // TLS/SSL handshake errors
+  if (
+    lowerMessage.includes("handshake") ||
+    lowerMessage.includes("tls") ||
+    lowerMessage.includes("ssl") ||
+    lowerMessage.includes("certificate")
+  ) {
+    return {
+      category: "handshake",
+      message: "TLS handshake failed",
+      details: rawMessage,
+      hint: "The secure connection could not be established with the server",
+    }
+  }
+
+  // Attestation/measurement mismatch errors
+  if (
+    lowerMessage.includes("mismatch") ||
+    lowerMessage.includes("measurement") ||
+    lowerMessage.includes("mrtd") ||
+    lowerMessage.includes("rtmr") ||
+    lowerMessage.includes("hash") ||
+    lowerMessage.includes("digest") ||
+    lowerMessage.includes("attestation")
+  ) {
+    return {
+      category: "attestation_mismatch",
+      message: "Attestation verification failed",
+      details: rawMessage,
+      hint: "The server's security measurements do not match expected values",
+    }
+  }
+
+  // Policy validation errors
+  if (
+    lowerMessage.includes("policy") ||
+    lowerMessage.includes("validation") ||
+    lowerMessage.includes("verify") ||
+    lowerMessage.includes("invalid")
+  ) {
+    return {
+      category: "policy_validation",
+      message: "Security policy validation failed",
+      details: rawMessage,
+      hint: "The server does not meet the required security policy",
+    }
+  }
+
+  // Timeout errors
+  if (
+    lowerMessage.includes("timeout") ||
+    lowerMessage.includes("timed out") ||
+    lowerMessage.includes("deadline")
+  ) {
+    return {
+      category: "timeout",
+      message: "Connection timed out",
+      details: rawMessage,
+      hint: "The server took too long to respond. Try again later",
+    }
+  }
+
+  // Unknown/unrecognized errors
+  return {
+    category: "unknown",
+    message: "Failed to establish secure connection",
+    details: rawMessage,
+    hint: undefined,
+  }
+}
