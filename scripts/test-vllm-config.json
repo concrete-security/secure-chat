@@ -1,0 +1,19 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:8000",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "Qwen/Qwen2.5-32B-Instruct",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "Qwen/Qwen2.5-32B-Instruct",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "Qwen/Qwen2.5-32B-Instruct"
+  },
+  "permissions": {
+    "allow": [
+      "Read:./**",
+      "Bash(ls*)",
+      "Bash(cat*)"
+    ],
+    "deny": [
+      "Read:.env",
+      "Read:.env.*"
+    ]
+  }
+}

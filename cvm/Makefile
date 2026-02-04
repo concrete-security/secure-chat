@@ -16,6 +16,8 @@ DEV_FLAG = $(if $(filter true,$(DEV)),--dev,)
 # Python runner command
 PYTHON_RUNNER ?= uv run
 
+SERVICES ?= vllm #nginx-cert-manager auth-service attestation-service
+
 .PHONY: help dev-full dev-up dev-down hs-up hs-down test-all test-health test-attestation test-vllm test-redirect test-acme test-certificate wait-services
 
 help:
@@ -104,3 +106,34 @@ test-cors:
 
 test-metrics-auth:
 	$(PYTHON_RUNNER) test_cvm.py $(DEV_FLAG) --metrics-auth --base-url $(NGINX_URL)
+
+
+.PHONY: docker-build
+docker-build:
+	@echo "🏗️ Building images for: $(SERVICES)"
+	@docker compose build $(cache) $(SERVICES)
+	@echo "✅ Successfully built images."
+
+.PHONY: docker-stop
+docker-stop:
+	@echo "🛑 Stopping & removing: $(SERVICES)"
+	@docker compose rm -f -s $(SERVICES) || true
+	@echo "✅ Successfully stopped and removed containers."
+
+.PHONY: docker-run
+docker-run:
+	@echo "🚀 Starting: $(SERVICES)"
+	@docker compose up -d --force-recreate --no-deps $(SERVICES)
+	@echo "✅ Successfully started containers."
+
+.PHONY: docker-logs
+docker-logs:
+	@echo "📜 Showing logs for all services"
+	@docker compose logs -f
+
+.PHONY: docker-up
+docker-up:
+	@$(MAKE) docker-build SERVICES="$(SERVICES)" cache="$(cache)"
+	@$(MAKE) docker-stop SERVICES="$(SERVICES)"
+	@$(MAKE) docker-run SERVICES="$(SERVICES)"
+	@$(MAKE) docker-logs SERVICES="$(SERVICES)"
