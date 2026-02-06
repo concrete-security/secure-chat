@@ -261,6 +261,34 @@ function ConfidentialAIContent() {
   ])
 
   const secureChannelReady = atlsState.status === "connected" && atlsState.attestation.trusted
+  const secureWorkspaceLabel = secureChannelReady
+    ? "Verified end-to-end encrypted workspace"
+    : atlsState.status === "connecting"
+      ? "Verifying encrypted workspace"
+      : atlsState.status === "error"
+        ? "Secure workspace unavailable"
+        : "Secure workspace pending"
+  const secureWorkspaceHint = secureChannelReady
+    ? "Messages and attachments are sent only through attested infrastructure."
+    : atlsState.status === "connecting"
+      ? "Checking enclave identity and policy before enabling secure messaging."
+      : atlsState.status === "error"
+        ? "Verification failed. Reconnect from Proof of Confidentiality."
+        : "Configure provider and complete attestation to enable secure messaging."
+  const secureWorkspaceDotClass = secureChannelReady
+    ? "bg-emerald-500"
+    : atlsState.status === "connecting"
+      ? "bg-sky-500 animate-pulse"
+      : atlsState.status === "error"
+        ? "bg-rose-500"
+        : "bg-slate-400"
+  const secureWorkspaceTextClass = secureChannelReady
+    ? "text-emerald-700 dark:text-emerald-300"
+    : atlsState.status === "connecting"
+      ? "text-sky-700 dark:text-sky-300"
+      : atlsState.status === "error"
+        ? "text-rose-700 dark:text-rose-300"
+        : "text-slate-700 dark:text-slate-300"
 
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
@@ -870,7 +898,7 @@ function ConfidentialAIContent() {
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             size={isCompact ? "sm" : "default"}
             onClick={() => void connectAtls({ force: true })}
             disabled={atlsState.status === "connecting" || !providerApiBase}
@@ -887,7 +915,10 @@ function ConfidentialAIContent() {
               variant="outline"
               size={isCompact ? "sm" : "default"}
               onClick={onViewDetails}
-              className="rounded-full"
+              className={cn(
+                "rounded-full font-semibold vault-outline hover:bg-[rgb(var(--vault-ink)/0.05)] hover:text-[color:rgb(var(--vault-ink))]",
+                isCompact ? "text-xs" : "text-sm"
+              )}
             >
               View Details
             </Button>
@@ -1773,14 +1804,30 @@ function ConfidentialAIContent() {
             </Button>
           ) : null}
 
-          <div className="flex flex-1 flex-col min-h-0">
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
-              role="log"
-              aria-live="polite"
-              aria-label="Confidential space transcript"
-            >
+          <div className="flex flex-1 min-h-0 px-3 pb-3 pt-2 sm:px-5 sm:pb-5 sm:pt-3">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-brand-primary/35 dark:bg-[linear-gradient(155deg,rgba(16,42,140,0.22),rgba(11,31,102,0.3))]">
+              <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-brand-primary/30 dark:bg-card/35 sm:px-6">
+                <div className="mx-auto flex w-full max-w-4xl items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
+                    <div className="space-y-0.5">
+                      <p className={cn("text-sm font-semibold", secureWorkspaceTextClass)}>{secureWorkspaceLabel}</p>
+                      <p className="text-xs text-muted-foreground">{secureWorkspaceHint}</p>
+                    </div>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Private
+                  </div>
+                </div>
+              </div>
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
+                role="log"
+                aria-live="polite"
+                aria-label="Confidential space transcript"
+              >
               <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
                 {guestNotice ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
@@ -1938,7 +1985,7 @@ function ConfidentialAIContent() {
               </div>
             </div>
             {showScrollToLatest && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center sm:bottom-20">
                 <Button
                   type="button"
                   size="sm"
@@ -1959,43 +2006,16 @@ function ConfidentialAIContent() {
             <form
               ref={chatFormRef}
               onSubmit={onSubmit}
-              className="shrink-0 border-t border-border/40 bg-white/95 px-4 py-4 shadow-inner dark:bg-card/25"
+              className="shrink-0 border-t border-brand-primary/20 bg-white/85 px-4 py-4 shadow-inner backdrop-blur dark:border-brand-primary/30 dark:bg-card/25"
             >
-              <div className="mx-auto w-full">
-                <div className="space-y-4 rounded-2xl border border-brand-primary/25 bg-[linear-gradient(145deg,hsl(var(--brand-primary)/0.06),hsl(var(--brand-secondary)/0.12))] p-3 shadow-sm dark:border-brand-primary/35 dark:bg-[linear-gradient(145deg,rgba(16,42,140,0.16),rgba(11,31,102,0.2))]">
-                  <div className="flex items-center justify-between gap-2 px-1">
-                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      <Lock className={cn("h-3.5 w-3.5", secureChannelReady ? "text-emerald-600" : "text-brand-primary")} />
-                      Encrypted composer
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
-                        secureChannelReady
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300"
-                          : atlsState.status === "connecting"
-                            ? "border-sky-400/60 bg-sky-400/10 text-sky-700 dark:text-sky-300"
-                            : atlsState.status === "error"
-                              ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:text-rose-300"
-                              : "border-border/60 bg-card/50 text-muted-foreground"
-                      )}
-                    >
-                      {secureChannelReady
-                        ? "Verified"
-                        : atlsState.status === "connecting"
-                          ? "Verifying"
-                          : atlsState.status === "error"
-                            ? "Unavailable"
-                            : "Pending"}
-                    </span>
-                  </div>
-
+              <div className="mx-auto w-full max-w-4xl">
+                <div className="rounded-2xl border border-brand-primary/25 bg-white/95 shadow-sm dark:border-brand-primary/35 dark:bg-card/30">
                   {uploadedFiles.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 border-b border-border/40 px-3 py-3 dark:border-border/60">
                       {uploadedFiles.map((file, index) => (
                         <div
                           key={index}
-                          className="flex items-center justify-between rounded-xl border border-border/40 bg-white p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
+                          className="flex items-center justify-between rounded-lg bg-card/40 px-2 py-2 text-xs text-muted-foreground dark:bg-card/20"
                         >
                           <div className="flex items-center gap-2">
                             <FileText className="size-3 text-brand-primary" />
@@ -2019,19 +2039,21 @@ function ConfidentialAIContent() {
                   )}
 
                   {composerNotice && (
-                    <div
-                      className={cn(
-                        "rounded-xl border px-3 py-2 text-xs",
-                        composerNotice.type === "error"
-                          ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
-                          : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
-                      )}
-                    >
-                      {composerNotice.message}
+                    <div className="px-3 pt-3">
+                      <div
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs",
+                          composerNotice.type === "error"
+                            ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
+                            : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
+                        )}
+                      >
+                        {composerNotice.message}
+                      </div>
                     </div>
                   )}
 
-                  <div className="relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm ring-1 ring-border/40 dark:bg-card/30 dark:ring-border/60">
+                  <div className="relative flex w-full items-center gap-3 px-3 py-2">
                     <label htmlFor="secure-input" className="sr-only">
                       Secure message input
                     </label>
@@ -2085,6 +2107,7 @@ function ConfidentialAIContent() {
               </div>
             </form>
           </div>
+        </div>
         </section>
       </main>
       <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
