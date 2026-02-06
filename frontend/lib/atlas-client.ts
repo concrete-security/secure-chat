@@ -166,7 +166,194 @@ type CreateAtlasFetchFn = (options: {
   onAttestation?: (attestation: AtlasAttestationResult) => void | Promise<void>
 }) => AtlasFetch
 
+type AtlasWasmHttpResponse = {
+  status: number
+  statusText: string
+  headers: Record<string, string>
+  body: ReadableStream<Uint8Array>
+}
+
+type AtlasWasmHttpClient = {
+  attestation: () => AtlasAttestationResult
+  close: () => void
+  fetch: (
+    method: string,
+    path: string,
+    host: string,
+    headers: Array<[string, string]>,
+    body?: Uint8Array | null
+  ) => Promise<AtlasWasmHttpResponse>
+  isReady: () => boolean
+}
+
+type AtlasWasmModule = {
+  default?: (moduleOrPath?: unknown) => Promise<unknown>
+  AtlsHttp?: {
+    connect: (
+      wsUrl: string,
+      serverName: string,
+      policy: AtlasPolicy
+    ) => Promise<AtlasWasmHttpClient>
+  }
+}
+
 let wasmInitPromise: Promise<{ createAtlasFetch: CreateAtlasFetchFn }> | null = null
+const atlsHttpConnectionCache = new Map<string, AtlasWasmHttpClient>()
+let atlsHttpWasmRuntimeInitPromise: Promise<void> | null = null
+
+function isLoopbackHostname(hostname: string): boolean {
+  const value = hostname.toLowerCase()
+  return (
+    value === "localhost" ||
+    value === "127.0.0.1" ||
+    value === "::1" ||
+    value.startsWith("127.")
+  )
+}
+
+function normalizeProxyUrl(raw: string): string {
+  const candidate = /^wss?:\/\//i.test(raw) ? raw : `ws://${raw.replace(/^\/+/, "")}`
+  const url = new URL(candidate)
+  const isProd = process.env.NODE_ENV === "production"
+  if (isProd && url.protocol !== "wss:" && !isLoopbackHostname(url.hostname)) {
+    throw new Error("aTLS proxy URL must use wss:// in production")
+  }
+  return url.toString()
+}
+
+function normalizeTargetHost(value: string): string {
+  return value.includes(":") ? value : `${value}:443`
+}
+
+function buildProxyUrl(base: string, target: string): string {
+  const url = new URL(normalizeProxyUrl(base))
+  url.searchParams.set("target", target)
+  return url.toString()
+}
+
+function createAtlasFetchFromAtlsHttp(mod: AtlasWasmModule): CreateAtlasFetchFn {
+  const atlsHttpClass = mod.AtlsHttp
+  if (!atlsHttpClass) {
+    throw new Error("Unsupported @concrete-security/atlas-wasm module: AtlsHttp export missing")
+  }
+
+  const ensureWasm = async () => {
+    if (!atlsHttpWasmRuntimeInitPromise) {
+      if (typeof mod.default === "function") {
+        atlsHttpWasmRuntimeInitPromise = Promise.resolve(mod.default()).then(() => undefined)
+      } else {
+        atlsHttpWasmRuntimeInitPromise = Promise.resolve()
+      }
+    }
+    await atlsHttpWasmRuntimeInitPromise
+  }
+
+  return ({ proxyUrl, targetHost, serverName, defaultHeaders, onAttestation, policy }) => {
+    const normalizedTarget = normalizeTargetHost(targetHost)
+    const sni = serverName || normalizedTarget.split(":")[0]
+    const host = normalizedTarget.endsWith(":443")
+      ? normalizedTarget.slice(0, normalizedTarget.length - 4)
+      : normalizedTarget
+    const wsUrl = buildProxyUrl(proxyUrl, normalizedTarget)
+    const base = new URL(`https://${normalizedTarget}`)
+    const cacheKey = `${wsUrl}|${sni}`
+
+    return async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      await ensureWasm()
+
+      let http = atlsHttpConnectionCache.get(cacheKey)
+      let attestation: AtlasAttestationResult
+
+      if (http && http.isReady()) {
+        attestation = http.attestation()
+      } else {
+        if (http) {
+          try {
+            http.close()
+          } catch {
+            // Ignore cleanup failures for stale connections.
+          }
+          atlsHttpConnectionCache.delete(cacheKey)
+        }
+
+        http = await atlsHttpClass.connect(wsUrl, sni, policy)
+        atlsHttpConnectionCache.set(cacheKey, http)
+        attestation = http.attestation()
+
+        if (onAttestation) {
+          try {
+            await onAttestation(attestation)
+          } catch (error) {
+            atlsHttpConnectionCache.delete(cacheKey)
+            try {
+              http.close()
+            } catch {
+              // Ignore cleanup failures when bubbling callback errors.
+            }
+            throw error
+          }
+        }
+      }
+
+      const request = new Request(input, init)
+      const url = new URL(request.url, base)
+      const path = `${url.pathname}${url.search}`
+
+      const mergedHeaders: Array<[string, string]> = []
+      if (defaultHeaders) {
+        for (const [name, value] of Object.entries(defaultHeaders)) {
+          mergedHeaders.push([name, value])
+        }
+      }
+      request.headers.forEach((value, name) => {
+        const index = mergedHeaders.findIndex(([headerName]) => headerName.toLowerCase() === name.toLowerCase())
+        if (index >= 0) {
+          mergedHeaders[index] = [name, value]
+          return
+        }
+        mergedHeaders.push([name, value])
+      })
+
+      let body: Uint8Array | null = null
+      if (request.body) {
+        body = new Uint8Array(await request.arrayBuffer())
+      }
+
+      let result: AtlasWasmHttpResponse
+      try {
+        result = await http.fetch(request.method, path, host, mergedHeaders, body)
+      } catch (error) {
+        atlsHttpConnectionCache.delete(cacheKey)
+        try {
+          http.close()
+        } catch {
+          // Ignore cleanup failures when bubbling request errors.
+        }
+        throw error
+      }
+
+      const responseHeaders = new Headers()
+      for (const [name, value] of Object.entries(result.headers)) {
+        responseHeaders.append(name, value)
+      }
+
+      const response = new Response(result.body, {
+        status: result.status,
+        statusText: result.statusText,
+        headers: responseHeaders,
+      }) as Response & { attestation: AtlasAttestationResult }
+
+      Object.defineProperty(response, "attestation", {
+        value: attestation,
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      })
+
+      return response
+    }
+  }
+}
 
 async function loadWasmModule(): Promise<{ createAtlasFetch: CreateAtlasFetchFn }> {
   if (typeof window === "undefined") {
@@ -179,9 +366,12 @@ async function loadWasmModule(): Promise<{ createAtlasFetch: CreateAtlasFetchFn 
 
   wasmInitPromise = (async () => {
     // Package integrity is verified by npm/pnpm during installation
-    const mod = await import("@concrete-security/atlas-wasm")
+    const mod = (await import("@concrete-security/atlas-wasm")) as AtlasWasmModule
+    if (!mod.AtlsHttp || typeof mod.AtlsHttp.connect !== "function") {
+      throw new Error("Unsupported @concrete-security/atlas-wasm API shape")
+    }
     return {
-      createAtlasFetch: mod.createRatlsFetch as CreateAtlasFetchFn,
+      createAtlasFetch: createAtlasFetchFromAtlsHttp(mod),
     }
   })()
 
@@ -403,13 +593,32 @@ export function categorizeAtlsError(error: unknown): CategorizedAtlsError {
   const rawMessage = error instanceof Error ? error.message : String(error)
   const lowerMessage = rawMessage.toLowerCase()
 
+  // Malformed attestation quote payload from proxy/attestation service
+  if (
+    lowerMessage.includes("/tdx_quote") ||
+    lowerMessage.includes("missing field `quote`") ||
+    lowerMessage.includes("missing field 'quote'") ||
+    lowerMessage.includes("quote verification failed") ||
+    lowerMessage.includes("failed to parse /tdx_quote")
+  ) {
+    return {
+      category: "attestation_mismatch",
+      message: "Malformed attestation quote response",
+      details: rawMessage,
+      hint: "The proxy returned an invalid quote payload. Check proxy and attestation service compatibility.",
+    }
+  }
+
   // Proxy/WebSocket connection errors
   if (
     lowerMessage.includes("websocket") ||
     lowerMessage.includes("proxy") ||
-    lowerMessage.includes("connect") ||
     lowerMessage.includes("econnrefused") ||
-    lowerMessage.includes("network")
+    lowerMessage.includes("enotfound") ||
+    lowerMessage.includes("failed to fetch") ||
+    lowerMessage.includes("network") ||
+    lowerMessage.includes("connection refused") ||
+    lowerMessage.includes("getaddrinfo")
   ) {
     return {
       category: "proxy_connection",
