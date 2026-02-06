@@ -39,24 +39,24 @@
 
   .dark {
     /* Dark Mode: Secure midnight treatment */
-    --background: 250 65% 10%;
+    --background: 221 47% 9%;
     --foreground: 210 20% 98%;
-    --card: 249 55% 16%;
+    --card: 221 41% 14%;
     --card-foreground: 0 0% 100%;
-    --popover: 250 58% 12%;
+    --popover: 221 45% 11%;
     --popover-foreground: 0 0% 100%;
     /* Brand highlight */
     --primary: 0 0% 100%;
-    --primary-foreground: 250 65% 10%;
+    --primary-foreground: 221 47% 9%;
     /* Brand colors for replacements (keep consistent with light theme) */
     --brand-primary: 227 80% 30%;
     --brand-secondary: 227 80% 22%;
     --brand-accent: 241 77% 47%;
     /* Subtle tinted surfaces */
-    --secondary: 250 45% 18%;
+    --secondary: 221 32% 18%;
     --secondary-foreground: 0 0% 96%;
-    --muted: 250 35% 24%;
-    --muted-foreground: 0 0% 90%;
+    --muted: 221 28% 23%;
+    --muted-foreground: 215 20% 82%;
     --accent: 227 80% 52%;
     --accent-foreground: 0 0% 100%;
     /* Feedback colors */
@@ -65,9 +65,9 @@
     --success: 145 65% 45%;
     --success-foreground: 0 0% 8%;
     /* UI chrome */
-    --border: 249 40% 35%;
-    --input: 249 40% 35%;
-    --ring: 0 0% 100%;
+    --border: 220 26% 30%;
+    --input: 220 26% 30%;
+    --ring: 220 72% 74%;
   }
 
 }

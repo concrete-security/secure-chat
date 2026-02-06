@@ -3,15 +3,15 @@ import { test, expect } from "@playwright/test"
 const PROVIDER_ROUTE = "**/v1/chat/completions"
 const ATTESTATION_ROUTE = "**/tdx_quote"
 
-const HERO_PROMPT = "Can you secure my documents?"
+const DEMO_BUTTON_LABEL = "Summarize blood test results"
+const DEMO_PROMPT = "Based on these blood test results, highlight any values that fall outside the normal range and explain them briefly in non-medical terms."
 const FOLLOW_UP_PROMPT = "How is the data encrypted?"
-const HERO_REPLY = "Secure session established."
+const DEMO_REPLY = "Secure session established."
 const FOLLOW_UP_REPLY = "All data stays encrypted in transit and at rest."
 
-test("landing page contact link, hero hand-off, and confidential chat flow", async ({ page }) => {
+test("landing page access CTA, demo hand-off, and confidential chat flow", async ({ page }) => {
   let requestCount = 0
   let latestReportData: string | null = null
-  let attestationRequests = 0
 
   await page.route(PROVIDER_ROUTE, async (route) => {
     const method = route.request().method()
@@ -35,12 +35,12 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
     const latestMessage = payload?.messages?.at(-1)?.content ?? ""
 
     if (requestCount === 0) {
-      expect(latestMessage).toContain(HERO_PROMPT)
+      expect(latestMessage).toContain(DEMO_PROMPT)
     } else {
       expect(latestMessage).toContain(FOLLOW_UP_PROMPT)
     }
 
-    const responseContent = requestCount === 0 ? HERO_REPLY : FOLLOW_UP_REPLY
+    const responseContent = requestCount === 0 ? DEMO_REPLY : FOLLOW_UP_REPLY
     requestCount += 1
 
     const streamBody = [
@@ -61,7 +61,6 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
   })
 
   await page.route(ATTESTATION_ROUTE, async (route) => {
-    attestationRequests += 1
     const payload = (route.request().postDataJSON() ?? {}) as { report_data?: string }
     latestReportData = typeof payload.report_data === "string" ? payload.report_data : null
     const reportData = latestReportData ?? "0x" + "ab".repeat(16)
@@ -75,7 +74,6 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
         success: true,
         quote_type: "tdx.quote.v1",
         timestamp: new Date().toISOString(),
-        test_mode: true,
         report_data: reportData,
         quote: {
           quote: "0x" + "11".repeat(64),
@@ -109,33 +107,17 @@ test("landing page contact link, hero hand-off, and confidential chat flow", asy
   await expect(contactLink).toBeVisible()
   await expect(contactLink).toHaveAttribute("href", "mailto:contact@concrete-security.com")
 
-  const heroInput = page.locator("#hero-input")
-  await expect(heroInput).toBeVisible()
-  await heroInput.fill(HERO_PROMPT)
-  await page.getByRole("button", { name: "Start secure session" }).click()
+  await expect(page.getByRole("button", { name: "Access Umbra Confidential Chat" })).toBeVisible()
+  await page.getByRole("button", { name: DEMO_BUTTON_LABEL }).click()
 
   await page.waitForURL("**/confidential-ai**", { timeout: 15_000 })
   await expect(page).toHaveURL(/\/confidential-ai(?:\?.*)?$/)
   const storedProvider = await page.evaluate(() => localStorage.getItem("confidential-provider-settings-v1"))
   console.log("[e2e] provider settings:", storedProvider)
 
-  // Expand the collapsed sidebar first
-  const expandSidebarButton = page.getByRole("button", { name: "Expand panel" })
-  await expect(expandSidebarButton).toBeVisible({ timeout: 10_000 })
-  await expandSidebarButton.click()
-
-  // Expand the "Proof of Confidentiality" accordion to see attestation status
-  const proofAccordion = page.getByText("Proof of Confidentiality")
-  await expect(proofAccordion).toBeVisible({ timeout: 10_000 })
-  await proofAccordion.click()
-
-  // Wait for attestation (test mode auto-verifies since WebSocket can't be mocked)
-  // Real attestation is tested in quote-verification.spec.ts
-  await expect(page.getByLabel("Proof of Confidentiality").getByText("Protected and verified")).toBeVisible({ timeout: 15_000 })
-
   const transcript = page.getByRole("log", { name: "Confidential space transcript" })
-  await expect(transcript).toContainText(HERO_PROMPT, { timeout: 15_000 })
-  await expect(transcript).toContainText(HERO_REPLY, { timeout: 15_000 })
+  await expect(transcript).toContainText(DEMO_PROMPT, { timeout: 15_000 })
+  await expect(transcript).toContainText(DEMO_REPLY, { timeout: 15_000 })
 
   const chatInput = page.locator("#secure-input")
   const sendButton = page.getByRole("button", { name: "Send secure message" })

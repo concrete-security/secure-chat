@@ -34,6 +34,13 @@ import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
 import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, categorizeAtlsError, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy, type AtlsErrorCategory, type CategorizedAtlsError } from "@/lib/atlas-client"
 import { scheduleAtlsAutoConnect } from "@/lib/atls-connect-scheduler"
+import { EXAMPLE_THEMES } from "@/lib/example-themes"
+import { DEMO_HANDOFF_STORAGE_KEY, canAutoSendDemo, parseDemoHandoffPayload } from "@/lib/demo-handoff"
+import {
+  LANDING_FILES_STORAGE_KEY,
+  LANDING_MESSAGE_STORAGE_KEY,
+  parseLandingUploadedFiles,
+} from "@/lib/landing-handoff"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -51,6 +58,22 @@ type Message = {
   reasoningEndTime?: number
 }
 type UploadedFile = { name: string; content: string; size: number; type: string }
+
+type DemoFilePayload = {
+  name: string
+  type: string
+  data: string
+}
+
+type DemoDocsResponse = {
+  files?: DemoFilePayload[]
+  error?: string
+}
+
+type SendMessageOverride = {
+  text?: string
+  files?: UploadedFile[]
+}
 
 type HostParts = {
   host: string
@@ -261,13 +284,49 @@ function ConfidentialAIContent() {
   ])
 
   const secureChannelReady = atlsState.status === "connected" && atlsState.attestation.trusted
-
+  const secureWorkspaceLabel = secureChannelReady
+    ? "Verified end-to-end encrypted workspace"
+    : atlsState.status === "connecting"
+      ? "Verifying encrypted workspace"
+      : atlsState.status === "error"
+        ? "Secure workspace unavailable"
+        : "Secure workspace pending"
+  const secureWorkspaceHint = secureChannelReady
+    ? "Messages and attachments are sent only through attested infrastructure."
+    : atlsState.status === "connecting"
+      ? "Checking enclave identity and policy before enabling secure messaging."
+      : atlsState.status === "error"
+        ? "Verification failed. Reconnect from Proof of Confidentiality."
+        : "Configure provider and complete attestation to enable secure messaging."
+  const secureWorkspaceDotClass = secureChannelReady
+    ? "bg-emerald-500"
+    : atlsState.status === "connecting"
+      ? "bg-sky-500 animate-pulse"
+      : atlsState.status === "error"
+        ? "bg-rose-500"
+        : "bg-slate-400"
+  const secureWorkspaceTextClass = secureChannelReady
+    ? "text-emerald-700 dark:text-emerald-300"
+    : atlsState.status === "connecting"
+      ? "text-sky-700 dark:text-sky-300"
+      : atlsState.status === "error"
+        ? "text-rose-700 dark:text-rose-300"
+        : "text-slate-700 dark:text-slate-300"
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
+  const [pendingDemoSend, setPendingDemoSend] = useState<SendMessageOverride | null>(null)
   const newConversationTimeoutRef = useRef<number | null>(null)
   const hasPromptedSetupRef = useRef(false)
   const autoConnectInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const lastAutoConnectRef = useRef<{ key: string; atMs: number } | null>(null)
+  const sendMessageRef = useRef<(override?: SendMessageOverride) => Promise<void>>(async () => {})
+
+  const sidebarIconButtonClass =
+    "h-8 w-8 rounded-full border border-border/50 bg-white/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/35 hover:bg-white hover:text-foreground dark:border-white/15 dark:bg-[#101D3A] dark:text-slate-100 dark:hover:border-brand-primary/60 dark:hover:bg-[#162B57] dark:hover:text-white"
+  const sidebarSessionButtonClass =
+    "gap-2 border-border/50 bg-card/50 text-foreground shadow-sm transition hover:bg-card/80 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:bg-white/[0.1] dark:hover:text-white"
+  const proofActionButtonClass =
+    "rounded-full border-border/50 bg-card/70 font-semibold text-foreground shadow-sm transition hover:border-brand-primary/45 hover:bg-brand-primary/10 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:border-brand-primary/55 dark:hover:bg-brand-primary/20 dark:hover:text-white"
 
   const applySupabaseSession = useCallback(
     (sessionUserEmail: string | null) => {
@@ -499,6 +558,7 @@ function ConfidentialAIContent() {
       // Clear previous logs on new connection attempt
       lastAtlsLogRef.current = null
       setAtlsLogs([])
+      atlasFetchRef.current = null
 
       if (!providerApiBase) {
         addAtlsLog("info", "Waiting for provider configuration...")
@@ -506,8 +566,9 @@ function ConfidentialAIContent() {
         return
       }
 
-      // Test mode: auto-verify attestation for E2E testing (only in non-production builds)
-      if (ATTESTATION_TEST_MODE && !atlsProxyUrl) {
+      // Test mode: auto-verify attestation for E2E testing (only in non-production builds).
+      // Always prefer the deterministic test-mode path when enabled.
+      if (ATTESTATION_TEST_MODE) {
         addAtlsLog("info", "Test mode: simulating attestation...")
         setAtlsState({ status: "connecting" })
         await new Promise(resolve => setTimeout(resolve, 500))
@@ -570,7 +631,7 @@ function ConfidentialAIContent() {
           addAtlsLog("info", "Establishing TLS connection...")
           addAtlsLog("info", "Performing TLS handshake with TEE server...")
 
-          await withTimeout(
+          const attestation = await withTimeout(
             warmupAtlasConnection(config, (att) => {
               addAtlsLog("info", "Received attestation quote from server")
               addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
@@ -598,22 +659,27 @@ function ConfidentialAIContent() {
 
               if (att.trusted) {
                 addAtlsLog("success", "All attestation checks passed")
-                addAtlsLog("success", "Secure channel established")
               } else {
                 addAtlsLog("warn", "Attestation verification completed with warnings")
               }
-
-              setAtlsState({
-                status: "connected",
-                attestation: att,
-              })
             }),
             CONNECTION_TIMEOUT_MS
           )
 
+          if (attestation.teeType.trim().toUpperCase() === "TEST_MODE") {
+            throw new Error(
+              "Remote attestation reported TEST_MODE. Simulated attestation is only allowed via NEXT_PUBLIC_ATTESTATION_TEST_MODE in non-production builds."
+            )
+          }
+
           // Create the fetch client (will reuse the warmed-up connection)
           const atlasFetch = await createAtlasClient(config)
           atlasFetchRef.current = atlasFetch
+          addAtlsLog("success", "Secure channel established")
+          setAtlsState({
+            status: "connected",
+            attestation,
+          })
 
           // Success - exit the retry loop
           return
@@ -870,12 +936,12 @@ function ConfidentialAIContent() {
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             size={isCompact ? "sm" : "default"}
             onClick={() => void connectAtls({ force: true })}
             disabled={atlsState.status === "connecting" || !providerApiBase}
             className={cn(
-              "rounded-full font-semibold vault-outline hover:bg-[rgb(var(--vault-ink)/0.05)] hover:text-[color:rgb(var(--vault-ink))]",
+              proofActionButtonClass,
               isCompact ? "text-xs" : "text-sm"
             )}
           >
@@ -887,7 +953,10 @@ function ConfidentialAIContent() {
               variant="outline"
               size={isCompact ? "sm" : "default"}
               onClick={onViewDetails}
-              className="rounded-full"
+              className={cn(
+                proofActionButtonClass,
+                isCompact ? "text-xs" : "text-sm"
+              )}
             >
               View Details
             </Button>
@@ -1065,7 +1134,7 @@ function ConfidentialAIContent() {
                     <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                       <Terminal className="h-4 w-4" />
                       Attestation Log
-                      <span className="text-xs font-normal vault-muted">
+                      <span className="text-xs font-normal text-muted-foreground">
                         ({atlsLogs.length} entries)
                       </span>
                     </div>
@@ -1202,7 +1271,7 @@ function ConfidentialAIContent() {
     return count === 1 ? '1 word' : `${count} words`
   }
   // Extract only text
-  const extractTextFromPDF = async (file: File): Promise<string> => {
+  const extractTextFromPDF = useCallback(async (file: File): Promise<string> => {
     try {
       const pdfModuleUrl = `${window.location.origin}/pdfjs/pdf.mjs`
       const pdfWorkerUrl = `${window.location.origin}/pdfjs/pdf.worker.mjs`
@@ -1225,10 +1294,198 @@ function ConfidentialAIContent() {
       }
       return text.trim()
     } catch (error) {
-      console.error('Error extracting text from PDF:', error)
-      throw new Error('Failed to extract text from PDF')
+      throw new Error(
+        `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown PDF parse error"}`
+      )
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const textDecoder = new TextDecoder()
+
+    const decodeBase64 = (value: string) => {
+      const normalized = value.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/")
+      const binary = window.atob(normalized)
+      const bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index)
+      }
+      return bytes
+    }
+
+    const isPdfBytes = (bytes: Uint8Array) =>
+      bytes.length >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d
+
+    const isGitLfsPointer = (text: string) =>
+      text.startsWith("version https://git-lfs.github.com/spec/v1") && text.includes("\noid sha256:")
+
+    const loadDemoHandoff = async () => {
+      const raw = window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)
+      if (!raw) return
+      const payload = parseDemoHandoffPayload(raw)
+      if (!payload) {
+        window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        return
+      }
+
+      const example = EXAMPLE_THEMES[payload.exampleId]
+      if (!example) return
+
+      if (cancelled) return
+      setInput(example.prompt)
+      setUploadedFiles([])
+
+      try {
+        const response = await fetch(`/api/example-docs/${encodeURIComponent(payload.exampleId)}`)
+        if (!response.ok) {
+          if (cancelled) return
+          setComposerNotice({
+            type: "error",
+            message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+          })
+          if (payload.autoSend) {
+            setPendingDemoSend({
+              text: example.prompt,
+              files: [],
+            })
+          }
+          return
+        }
+
+        const docs = (await response.json()) as DemoDocsResponse
+        const files = Array.isArray(docs.files) ? docs.files : []
+        const failedFiles: string[] = []
+        const preloadedFiles: UploadedFile[] = []
+
+        for (const filePayload of files) {
+          try {
+            const bytes = decodeBase64(filePayload.data)
+            const fileType = filePayload.type || "application/pdf"
+            let content: string
+            let normalizedType = fileType
+
+            if (fileType === "application/pdf" && !isPdfBytes(bytes)) {
+              const decodedText = textDecoder.decode(bytes)
+              if (isGitLfsPointer(decodedText)) {
+                failedFiles.push(`${filePayload.name} (missing Git LFS asset)`)
+                continue
+              }
+              normalizedType = "text/plain"
+              content = decodedText
+            } else {
+              const file = new File([bytes], filePayload.name, { type: fileType })
+              content =
+                fileType === "application/pdf"
+                  ? await extractTextFromPDF(file)
+                  : await file.text()
+            }
+
+            preloadedFiles.push({
+              name: filePayload.name,
+              type: normalizedType,
+              size: bytes.byteLength,
+              content,
+            })
+          } catch {
+            failedFiles.push(filePayload.name)
+          }
+        }
+
+        if (cancelled) return
+
+        setUploadedFiles(preloadedFiles)
+        setInput(example.prompt)
+
+        if (failedFiles.length > 0) {
+          setComposerNotice({
+            type: "error",
+            message: `Some demo files could not be processed: ${failedFiles.join(", ")}`,
+          })
+        } else {
+          setComposerNotice(null)
+        }
+
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: preloadedFiles,
+          })
+        }
+      } catch (error) {
+        console.error("Failed to load demo files", error)
+        if (cancelled) return
+        setComposerNotice({
+          type: "error",
+          message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+        })
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: [],
+          })
+        }
+      } finally {
+        if (!cancelled) {
+          window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        }
+      }
+    }
+
+    void loadDemoHandoff()
+
+    return () => {
+      cancelled = true
+    }
+  }, [extractTextFromPDF])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      if (window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)) return
+
+      const rawMessage = window.sessionStorage.getItem(LANDING_MESSAGE_STORAGE_KEY)
+      const rawFiles = window.sessionStorage.getItem(LANDING_FILES_STORAGE_KEY)
+      const restoredFiles = parseLandingUploadedFiles(rawFiles)
+      const restoredMessage = (rawMessage ?? "").trim()
+      const hasMessage = restoredMessage.length > 0
+      const hasFiles = restoredFiles.length > 0
+
+      if (!hasMessage && !hasFiles) {
+        if (rawMessage !== null || rawFiles !== null) {
+          window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+          window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+        }
+        return
+      }
+
+      setInput(restoredMessage)
+      setUploadedFiles(restoredFiles)
+      setPendingDemoSend({
+        text: restoredMessage,
+        files: restoredFiles,
+      })
+      setComposerNotice(null)
+
+      window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+    }, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [])
 
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -1367,7 +1624,7 @@ function ConfidentialAIContent() {
     }
   }, [])
 
-  const sendMessage = async () => {
+  const sendMessage = async (override?: SendMessageOverride) => {
     if (isSending) return
     setComposerNotice(null)
     if (!secureChannelReady) {
@@ -1378,8 +1635,8 @@ function ConfidentialAIContent() {
       setGuestNotice("You've already used your guest confidential session. Sign in to continue.")
       return
     }
-    const rawText = input
-    const activeFiles = uploadedFiles
+    const rawText = override?.text ?? input
+    const activeFiles = override?.files ?? uploadedFiles
     const text = rawText.trim()
     if (!text && activeFiles.length === 0) return
 
@@ -1387,12 +1644,6 @@ function ConfidentialAIContent() {
       setConfigError("Add a confidential provider base URL before starting a session.")
       setComposerNotice({ type: "error", message: "Session setup is incomplete. Add your provider URL first." })
       setSessionDialogOpen(true)
-      return
-    }
-
-    if (!providerModel) {
-      setConfigError("Set NEXT_PUBLIC_VLLM_MODEL in your environment before starting a session.")
-      setComposerNotice({ type: "error", message: "Model configuration is missing for this environment." })
       return
     }
 
@@ -1535,6 +1786,52 @@ function ConfidentialAIContent() {
     }
   }
 
+  sendMessageRef.current = sendMessage
+
+  useEffect(() => {
+    if (!pendingDemoSend) return
+
+    const readiness = {
+      pendingDemoSend: true,
+      secureChannelReady,
+      providerConfigured: Boolean(providerApiBase),
+      guestRestricted: guestRestrictionActive,
+      isSending,
+    }
+
+    if (guestRestrictionActive) {
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Sign in to send this request securely.",
+        }
+      )
+      return
+    }
+
+    if (!providerApiBase) {
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Configure session settings to send securely.",
+        }
+      )
+      return
+    }
+
+    if (!canAutoSendDemo(readiness)) return
+
+    const nextSend = pendingDemoSend
+    setPendingDemoSend(null)
+    void sendMessageRef.current(nextSend)
+  }, [
+    guestRestrictionActive,
+    isSending,
+    pendingDemoSend,
+    providerApiBase,
+    secureChannelReady,
+  ])
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
     void sendMessage()
@@ -1609,12 +1906,12 @@ function ConfidentialAIContent() {
   }, [updateAutoScrollEnabled])
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-background">
+    <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-[#050C1B]">
       <main className="flex flex-1 flex-col min-h-0">
         <section className="relative flex h-full w-full flex-1 flex-col md:flex-row" aria-label="Confidential space">
           <aside
             className={cn(
-              "flex flex-col border-border/40 bg-white/95 transition-[opacity,transform,width] duration-200 dark:border-border/60 dark:bg-[#0B0820]/95 md:border-border/40 md:bg-white/85 md:dark:bg-card/25",
+              "flex flex-col border-border/40 bg-white/95 transition-[opacity,transform,width] duration-200 dark:border-white/10 dark:bg-[#0C1832]/95 md:border-border/40 md:bg-white/85 md:dark:bg-[#0C1832]/84",
               "fixed inset-y-0 left-0 z-40 h-[100dvh] w-[min(360px,90vw)] overflow-y-auto border-r shadow-[0_20px_60px_-25px_rgba(5,3,15,0.85)] md:static md:h-full md:w-auto md:flex-none md:border-b-0 md:border-r md:shadow-none",
               sidebarOpen
                 ? "translate-x-0 opacity-100 pointer-events-auto gap-6 p-5 sm:p-6 md:p-4 md:w-full md:max-w-[320px]"
@@ -1637,7 +1934,7 @@ function ConfidentialAIContent() {
                         variant="ghost"
                         size="icon"
                         onClick={() => setSidebarOpen(false)}
-                        className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        className={sidebarIconButtonClass}
                       >
                         <PanelLeftClose className="h-4 w-4" />
                         <span className="sr-only">Collapse panel</span>
@@ -1661,34 +1958,34 @@ function ConfidentialAIContent() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        className={sidebarSessionButtonClass}
                         onClick={() => setSessionDialogOpen(true)}
                         title="Settings"
                       >
-                        <Settings2 className="h-3.5 w-3.5 text-brand-primary" />
+                        <Settings2 className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
                         <span className="text-xs">Settings</span>
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        className={sidebarSessionButtonClass}
                         onClick={handleSaveConversation}
                         disabled={!hasConversationHistory}
                         title="Download JSON"
                       >
-                        <Save className="h-3.5 w-3.5 text-brand-primary" />
+                        <Save className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
                         <span className="text-xs">Save</span>
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        className={sidebarSessionButtonClass}
                         onClick={handleStartNewConversation}
                         disabled={isSending || isStreaming}
                       >
-                        <MessageSquarePlus className="h-3.5 w-3.5 text-brand-primary" />
+                        <MessageSquarePlus className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
                         <span className="text-xs">New</span>
                       </Button>
                     </div>
@@ -1714,28 +2011,33 @@ function ConfidentialAIContent() {
                   </AccordionItem>
                 </Accordion>
 
-                <div className="mt-auto pt-4 flex items-center justify-center">
-                  <Link
-                    href="/"
-                    className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
-                  >
-                    <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
-                  </Link>
+                <div className="mt-auto space-y-3 pt-4">
+                  <FeedbackButton source="confidential" position="inline" label="Contact" />
+                  <div className="flex items-center justify-center">
+                    <Link
+                      href="/"
+                      className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
+                    >
+                      <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
+                    </Link>
+                  </div>
                 </div>
               </>
             ) : (
-              <div className="flex h-full flex-col items-center justify-between gap-4 py-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSidebarOpen(true)}
-                  className="rounded-full border border-border/40 bg-card/80 text-muted-foreground transition hover:bg-card/90 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                  <span className="sr-only">Expand panel</span>
-                </Button>
-                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <div className="flex h-full flex-col items-center justify-between py-3">
+                <div className="flex flex-col items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSidebarOpen(true)}
+                    className={sidebarIconButtonClass}
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                    <span className="sr-only">Expand panel</span>
+                  </Button>
+                </div>
+                <div className="flex flex-col items-center gap-3 text-muted-foreground dark:text-slate-300">
                   <Lock className="h-5 w-5 text-brand-accent" />
                   <span className="text-[10px] font-semibold uppercase tracking-[0.4em] [writing-mode:vertical-rl] [text-orientation:mixed]">
                     Confidential
@@ -1766,21 +2068,36 @@ function ConfidentialAIContent() {
               variant="ghost"
               size="icon"
               onClick={() => setSidebarOpen(true)}
-              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-white/90 text-muted-foreground shadow-md backdrop-blur md:hidden"
+              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-white/90 text-muted-foreground shadow-md backdrop-blur transition hover:bg-white md:hidden dark:border-white/15 dark:bg-[#0F1A37]/92 dark:text-slate-100 dark:hover:bg-[#13254E]"
             >
               <PanelLeftOpen className="h-4 w-4" />
               <span className="sr-only">Open confidential tools</span>
             </Button>
           ) : null}
 
-          <div className="flex flex-1 flex-col min-h-0">
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
-              role="log"
-              aria-live="polite"
-              aria-label="Confidential space transcript"
-            >
+          <div className="flex flex-1 min-h-0 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0)+56px)] sm:px-5 sm:pb-5 sm:pt-3">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-[#365082]/45 dark:bg-[linear-gradient(158deg,rgba(10,22,47,0.94),rgba(7,16,35,0.95))]">
+              <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0E1935]/84 sm:px-6">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
+                    <p className={cn("truncate text-sm font-semibold", secureWorkspaceTextClass)} title={secureWorkspaceHint}>
+                      {secureWorkspaceLabel}
+                    </p>
+                  </div>
+                  <div className="inline-flex self-start items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary sm:self-auto">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <span>Private</span>
+                  </div>
+                </div>
+              </div>
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
+                role="log"
+                aria-live="polite"
+                aria-label="Confidential space transcript"
+              >
               <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
                 {guestNotice ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
@@ -1938,7 +2255,7 @@ function ConfidentialAIContent() {
               </div>
             </div>
             {showScrollToLatest && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center sm:bottom-20">
                 <Button
                   type="button"
                   size="sm"
@@ -1947,7 +2264,7 @@ function ConfidentialAIContent() {
                     "pointer-events-auto gap-1 rounded-full border border-border/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm backdrop-blur transition dark:border-border/60",
                     hasNewMessages
                       ? "bg-brand-gradient text-white hover:brightness-110"
-                      : "bg-white/95 text-foreground hover:bg-white dark:bg-card/30 dark:text-foreground dark:hover:bg-card/40"
+                      : "bg-white/95 text-foreground hover:bg-white dark:bg-[#13213E]/90 dark:text-slate-100 dark:hover:bg-[#172A50]"
                   )}
                   onClick={() => scrollToBottom()}
                 >
@@ -1959,43 +2276,16 @@ function ConfidentialAIContent() {
             <form
               ref={chatFormRef}
               onSubmit={onSubmit}
-              className="shrink-0 border-t border-border/40 bg-white/95 px-4 py-4 shadow-inner dark:bg-card/25"
+              className="shrink-0 border-t border-brand-primary/20 bg-white/85 px-4 py-4 shadow-inner backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0C1630]/92"
             >
-              <div className="mx-auto w-full">
-                <div className="space-y-4 rounded-2xl border border-brand-primary/25 bg-[linear-gradient(145deg,hsl(var(--brand-primary)/0.06),hsl(var(--brand-secondary)/0.12))] p-3 shadow-sm dark:border-brand-primary/35 dark:bg-[linear-gradient(145deg,rgba(16,42,140,0.16),rgba(11,31,102,0.2))]">
-                  <div className="flex items-center justify-between gap-2 px-1">
-                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      <Lock className={cn("h-3.5 w-3.5", secureChannelReady ? "text-emerald-600" : "text-brand-primary")} />
-                      Encrypted composer
-                    </div>
-                    <span
-                      className={cn(
-                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
-                        secureChannelReady
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300"
-                          : atlsState.status === "connecting"
-                            ? "border-sky-400/60 bg-sky-400/10 text-sky-700 dark:text-sky-300"
-                            : atlsState.status === "error"
-                              ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:text-rose-300"
-                              : "border-border/60 bg-card/50 text-muted-foreground"
-                      )}
-                    >
-                      {secureChannelReady
-                        ? "Verified"
-                        : atlsState.status === "connecting"
-                          ? "Verifying"
-                          : atlsState.status === "error"
-                            ? "Unavailable"
-                            : "Pending"}
-                    </span>
-                  </div>
-
+              <div className="mx-auto w-full max-w-4xl">
+                <div className="rounded-2xl border border-brand-primary/25 bg-white/95 shadow-sm dark:border-[#335188]/60 dark:bg-[#132447]/88">
                   {uploadedFiles.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 border-b border-border/40 px-3 py-3 dark:border-border/60">
                       {uploadedFiles.map((file, index) => (
                         <div
                           key={index}
-                          className="flex items-center justify-between rounded-xl border border-border/40 bg-white p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
+                          className="flex items-center justify-between rounded-lg bg-card/40 px-2 py-2 text-xs text-muted-foreground dark:bg-[#0E1D3D]/72"
                         >
                           <div className="flex items-center gap-2">
                             <FileText className="size-3 text-brand-primary" />
@@ -2009,7 +2299,7 @@ function ConfidentialAIContent() {
                             variant="ghost"
                             size="sm"
                             onClick={() => removeFile(index)}
-                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-border/60 dark:hover:bg-card/30"
+                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-white/20 dark:text-slate-100 dark:hover:bg-white/[0.08]"
                           >
                             <X className="size-3" />
                           </Button>
@@ -2019,19 +2309,21 @@ function ConfidentialAIContent() {
                   )}
 
                   {composerNotice && (
-                    <div
-                      className={cn(
-                        "rounded-xl border px-3 py-2 text-xs",
-                        composerNotice.type === "error"
-                          ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
-                          : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
-                      )}
-                    >
-                      {composerNotice.message}
+                    <div className="px-3 pt-3">
+                      <div
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs",
+                          composerNotice.type === "error"
+                            ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
+                            : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
+                        )}
+                      >
+                        {composerNotice.message}
+                      </div>
                     </div>
                   )}
 
-                  <div className="relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm ring-1 ring-border/40 dark:bg-card/30 dark:ring-border/60">
+                  <div className="relative flex w-full items-center gap-3 px-3 py-2">
                     <label htmlFor="secure-input" className="sr-only">
                       Secure message input
                     </label>
@@ -2060,7 +2352,7 @@ function ConfidentialAIContent() {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isSending || guestRestrictionActive}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50 dark:text-slate-200 dark:hover:bg-white/[0.08] dark:hover:text-white"
                       title="Upload files"
                     >
                       <Paperclip className="h-5 w-5" />
@@ -2068,7 +2360,7 @@ function ConfidentialAIContent() {
                     <Button
                       type="submit"
                       size="icon"
-                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-brand-primary"
+                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-[linear-gradient(135deg,rgba(31,74,201,0.95),rgba(18,49,146,0.95))]"
                       disabled={
                         guestRestrictionActive ||
                         isSending ||
@@ -2085,6 +2377,7 @@ function ConfidentialAIContent() {
               </div>
             </form>
           </div>
+        </div>
         </section>
       </main>
       <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
@@ -2202,7 +2495,6 @@ function ConfidentialAIContent() {
         </DialogContent>
       </Dialog>
       <AtlsDetailsModal />
-      <FeedbackButton source="confidential" position="bottom-right" />
     </div>
   )
 }

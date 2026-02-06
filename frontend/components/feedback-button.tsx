@@ -10,7 +10,8 @@ import { useFormToken } from "@/hooks/use-form-token"
 
 type FeedbackButtonProps = {
   source: "landing" | "confidential"
-  position?: "bottom-right" | "top-right"
+  position?: "bottom-right" | "top-right" | "inline"
+  label?: string
 }
 
 const initialFormState = {
@@ -19,7 +20,7 @@ const initialFormState = {
   message: "",
 }
 
-export function FeedbackButton({ source, position = "bottom-right" }: FeedbackButtonProps) {
+export function FeedbackButton({ source, position = "bottom-right", label = "Contact" }: FeedbackButtonProps) {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(initialFormState)
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
@@ -129,26 +130,38 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
       resetForm()
     }
   }
+  const isInline = position === "inline"
+
   const placementClass =
     position === "top-right"
       ? "top-[calc(env(safe-area-inset-top,0)+16px)] right-4 sm:right-6 sm:top-[calc(env(safe-area-inset-top,0)+24px)]"
-      : "bottom-[calc(env(safe-area-inset-bottom,0)+20px)] right-4 sm:bottom-6 sm:right-6"
+      : source === "confidential"
+        ? "bottom-[calc(env(safe-area-inset-bottom,0)+104px)] right-4 sm:bottom-6 sm:right-6"
+        : "bottom-[calc(env(safe-area-inset-bottom,0)+20px)] right-4 sm:bottom-6 sm:right-6"
 
   return (
-    <div className={cn("fixed z-20 flex flex-col items-end gap-3 md:z-40", placementClass)}>
+    <div className={cn(isInline ? "w-full" : "fixed z-20 flex flex-col items-end gap-3 md:z-40", !isInline && placementClass)}>
       <Button
         onClick={() => setOpen(true)}
-        className="rounded-full bg-[#08070B] px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-[#08070B]/30 hover:bg-[#1B0986]"
+        className={cn(
+          isInline
+            ? "h-10 w-full justify-center rounded-xl border border-border/50 bg-card/70 px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-card/90"
+            : "rounded-full bg-[#08070B] text-sm font-semibold text-white shadow-lg shadow-[#08070B]/30 hover:bg-[#1B0986]",
+          !isInline && (source === "confidential" ? "px-4 py-2 text-xs sm:px-5 sm:text-sm" : "px-5 py-2")
+        )}
       >
         <MessageSquare className="size-4" />
-        Give feedback
+        {label}
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md border border-[#d4d3e6] bg-white/95 p-0 shadow-xl">
           <DialogHeader className="space-y-2 border-b border-[#d4d3e6]/60 px-6 py-4">
-            <DialogTitle className="text-lg font-semibold text-[#08070B]">Private beta feedback</DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-[#08070B]">Contact</DialogTitle>
             <DialogDescription className="text-sm text-[#1F1E28]/80">
-              Share what&apos;s working, what&apos;s broken, or what you&apos;d like to see next. We read every note.
+              Share what&apos;s working, what&apos;s broken, or what you&apos;d like to see next. Prefer email:{" "}
+              <a className="font-medium text-[#1B0986] underline-offset-2 hover:underline" href="mailto:contact@concrete-security.com">
+                contact@concrete-security.com
+              </a>
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
@@ -186,7 +199,7 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
               />
             </label>
             <label className="text-sm font-medium text-[#1F1E28]">
-              Feedback
+              Message
               <textarea
                 value={form.message}
                 onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
@@ -210,7 +223,7 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
                 className="rounded-full bg-[#1B0986] px-5 py-2 text-sm font-semibold text-white hover:bg-[#120463]"
                 disabled={status === "loading" || status === "success" || formTokenLoading || !formToken}
               >
-                {status === "loading" ? "Sending…" : status === "success" ? "Sent" : "Send feedback"}
+                {status === "loading" ? "Sending…" : status === "success" ? "Sent" : "Send message"}
               </Button>
             </div>
           </form>

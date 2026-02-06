@@ -2,95 +2,219 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useState, FormEvent, KeyboardEvent } from "react"
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
   Shield,
   Lock,
   Fingerprint,
-  CircuitBoard,
   Send,
   FileText,
-  CheckCircle2,
+  Paperclip,
+  X,
   Brain,
 } from "lucide-react"
 
 import { LoadingTransition } from "@/components/loading-transition"
 import { ForceLightTheme } from "@/components/force-light-theme"
-import { FeedbackButton } from "@/components/feedback-button"
 import { Button } from "@/components/ui/button"
 import AnnouncementBar from "@/components/announcement-bar"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
+import { DEMO_HANDOFF_STORAGE_KEY, type DemoHandoffPayload } from "@/lib/demo-handoff"
+import {
+  LANDING_FILES_STORAGE_KEY,
+  LANDING_MESSAGE_STORAGE_KEY,
+  type LandingUploadedFile,
+} from "@/lib/landing-handoff"
 
 const examplePrompts: ExampleTheme[] = Object.values(EXAMPLE_THEMES)
-const flowSteps = [
+
+type SecurityQuickStep = {
+  title: string
+  description: string
+  icon: typeof Shield
+}
+
+const securityQuickSteps: SecurityQuickStep[] = [
   {
-    title: "Client Encryption",
-    description: "Data is encrypted in your browser before transmission",
-    icon: Lock,
-  },
-  {
-    title: "Secure Machine",
-    description: "Encrypted data reaches TEE with cryptographic verification",
+    title: "Encrypt and attest",
+    description: "Your browser encrypts data and verifies the enclave identity first.",
     icon: Shield,
   },
   {
-    title: "Decryption",
-    description: "Data is decrypted inside the secure TEE environment",
-    icon: Fingerprint,
-  },
-  {
-    title: "AI Processing",
-    description: "Your documents are processed by AI within the secure environment",
+    title: "Process in TEE",
+    description: "Plaintext exists only inside the attested confidential runtime.",
     icon: Brain,
   },
   {
-    title: "Encryption",
-    description: "Results are encrypted before leaving the TEE",
-    icon: Lock,
-  },
-  {
-    title: "Client",
-    description: "Encrypted response is sent back to your browser",
-    icon: CircuitBoard,
-  },
-  {
-    title: "Decryption",
-    description: "You decrypt and view the results locally",
+    title: "Decrypt locally",
+    description: "Responses are re-encrypted and only your browser can decrypt them.",
     icon: Fingerprint,
   },
+]
+
+const securityQuickGuarantees = [
+  "Plaintext never crosses the network",
+  "Attestation is checked before processing",
+  "Only your device decrypts the final output",
 ]
 
 export default function LandingPage() {
   const router = useRouter()
   const [input, setInput] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<LandingUploadedFile[]>([])
+  const [heroNotice, setHeroNotice] = useState<string | null>(null)
   const [selectedExampleId, setSelectedExampleId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const trimmed = input.trim()
-    if (!trimmed) return
+  const extractTextFromPDF = useCallback(async (file: File): Promise<string> => {
+    const pdfModuleUrl = `${window.location.origin}/pdfjs/pdf.mjs`
+    const pdfWorkerUrl = `${window.location.origin}/pdfjs/pdf.worker.mjs`
+    const pdfjsLibModule = await import(/* webpackIgnore: true */ pdfModuleUrl)
+    const pdfjsLib =
+      (pdfjsLibModule as unknown as { default?: any }).default ??
+      (window as any).pdfjsLib ??
+      pdfjsLibModule
 
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    let text = ""
+
+    for (let i = 1; i <= pdf.numPages; i += 1) {
+      const page = await pdf.getPage(i)
+      const textContent = await page.getTextContent()
+      const pageText = textContent.items
+        .map((item: any) => ("str" in item ? item.str : ""))
+        .join(" ")
+      text += `${pageText}\n`
+    }
+    return text.trim()
+  }, [])
+
+  const persistLandingHandoff = (message: string, files: LandingUploadedFile[]) => {
+    try {
+      const trimmed = message.trim()
+      if (trimmed.length > 0) {
+        window.sessionStorage.setItem(LANDING_MESSAGE_STORAGE_KEY, trimmed)
+      } else {
+        window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      }
+
+      if (files.length > 0) {
+        window.sessionStorage.setItem(LANDING_FILES_STORAGE_KEY, JSON.stringify(files))
+      } else {
+        window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to persist landing handoff payload", error)
+      }
+    }
+  }
+
+  const navigateToConfidentialChat = () => {
     setIsTransitioning(true)
     setTimeout(() => {
       router.push("/confidential-ai")
     }, 600)
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e as unknown as FormEvent)
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    persistLandingHandoff(input, uploadedFiles)
+    navigateToConfidentialChat()
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      handleSubmit(event as unknown as FormEvent)
     }
   }
 
-  // Handles clicks on "Try an example" buttons
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files) return
+
+    const acceptedFiles: LandingUploadedFile[] = []
+    const failedFileNames: string[] = []
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const maxSizeBytes = 100 * 1024 * 1024
+
+      if (file.size > maxSizeBytes) {
+        failedFileNames.push(`${file.name} (over 100MB limit)`)
+        continue
+      }
+
+      try {
+        const content =
+          file.type === "application/pdf"
+            ? await extractTextFromPDF(file)
+            : await file.text()
+
+        acceptedFiles.push({
+          name: file.name,
+          content,
+          size: file.size,
+          type: file.type || "text/plain",
+        })
+      } catch (error) {
+        failedFileNames.push(file.name)
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(`Failed to load landing file ${file.name}`, error)
+        }
+      }
+    }
+
+    if (acceptedFiles.length > 0) {
+      setUploadedFiles((previous) => [...previous, ...acceptedFiles])
+    }
+
+    if (failedFileNames.length > 0) {
+      setHeroNotice(`Some files could not be processed: ${failedFileNames.join(", ")}`)
+    } else {
+      setHeroNotice(null)
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((previous) => previous.filter((_, fileIndex) => fileIndex !== index))
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const units = ["Bytes", "KB", "MB"]
+    const unitIndex = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(2))} ${units[unitIndex]}`
+  }
+
   const handleExampleClick = (example: ExampleTheme) => {
     if (!example?.id) return
     setSelectedExampleId(example.id)
-    setInput(example.prompt)
+    const payload: DemoHandoffPayload = { exampleId: example.id, autoSend: true }
+
+    try {
+      window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+      window.sessionStorage.setItem(DEMO_HANDOFF_STORAGE_KEY, JSON.stringify(payload))
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to persist demo handoff payload", error)
+      }
+    }
+
+    navigateToConfidentialChat()
   }
 
   return (
@@ -107,7 +231,7 @@ export default function LandingPage() {
               asChild
               variant="outline"
             >
-              <a href="mailto:contact@concrete-security.com">Contact us</a>
+              <a href="mailto:contact@concrete-security.com">Contact</a>
             </Button>
           </div>
         </div>
@@ -136,31 +260,82 @@ export default function LandingPage() {
                   </div>
                   <div className="flex w-full flex-col gap-3">
                     <label htmlFor="hero-input" className="sr-only">
-                      Ask about your confidential documents
+                      Ask about your confidential files
                     </label>
                     <textarea
                       id="hero-input"
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={(event) => setInput(event.target.value)}
                       onKeyDown={handleKeyDown}
+                      placeholder="Ask about your confidential files..."
                       disabled={isTransitioning}
-                      placeholder="Ask about your confidential documents..."
-                      className="min-h-[140px] w-full resize-none rounded-[32px] border border-[#d7d5eb] bg-white px-5 py-5 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_32px_80px_-60px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
+                      className="min-h-[128px] w-full resize-none rounded-[28px] border border-[#d7d5eb] bg-white px-5 py-4 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_26px_70px_-58px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
                       rows={4}
                     />
-                    <p className="text-center text-xs text-[#1F1E28]/65">
-                      You will upload confidential files in the secure workspace. Landing inputs are not persisted.
-                    </p>
-                    <div className="flex w-full items-center gap-3">
+
+                    {uploadedFiles.length > 0 && (
+                      <div className="space-y-2 rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] p-3">
+                        {uploadedFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${index}`}
+                            className="flex items-center justify-between rounded-lg border border-[#d7d5eb] bg-white px-2.5 py-2 text-xs text-[#1F1E28]"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <FileText className="h-3.5 w-3.5 shrink-0 text-[#1B0986]" />
+                              <span className="truncate font-medium">{file.name}</span>
+                              <span className="shrink-0 text-[#1F1E28]/65">({formatFileSize(file.size)})</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeFile(index)}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#d7d5eb] text-[#1F1E28]/70 transition hover:border-[#1B0986] hover:text-[#1B0986]"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              <span className="sr-only">Remove file</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {heroNotice ? (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {heroNotice}
+                      </div>
+                    ) : null}
+
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      multiple
+                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                      className="hidden"
+                    />
+
+                    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 rounded-xl border-[#d7d5eb] bg-white text-[#1F1E28] hover:border-[#1B0986] hover:bg-white hover:text-[#1B0986] sm:w-auto"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isTransitioning}
+                      >
+                        <Paperclip className="mr-2 h-4 w-4" />
+                        Upload files
+                      </Button>
                       <Button
                         type="submit"
                         className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#1B0986,#0B0870)] text-white shadow-sm transition hover:shadow-lg disabled:bg-[#1B0986]/55 disabled:text-white/75 disabled:hover:shadow-none"
-                        disabled={isTransitioning || !input.trim()}
+                        disabled={isTransitioning}
                       >
                         <Send className="mr-2 h-4 w-4" />
-                        Start secure session
+                        Access Umbra Confidential Chat
                       </Button>
                     </div>
+                    <p className="text-center text-xs text-[#1F1E28]/65">
+                      Text and files move to the confidential workspace and are sent only after secure session verification.
+                    </p>
                   </div>
                   <div className="flex flex-col gap-2 text-center">
                     <p className="text-xs font-medium uppercase tracking-[0.24em] text-[#1F1E28]/60">Try an example:</p>
@@ -250,47 +425,57 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="px-4 pb-24" id="security-flow">
-          <div className="container flex flex-col gap-10">
-            <div className="max-w-[720px] space-y-4">
+        <section className="px-4 pb-20" id="security-flow">
+          <div className="container flex flex-col gap-6">
+            <div className="max-w-[760px] space-y-3">
               <span className="text-xs uppercase tracking-[0.4em] text-[#1F1E28]/70">Security Flow</span>
-              <h2 className="text-[34px] font-semibold leading-[38px] text-[#08070B]">
-                End-to-End Protection
+              <h2 className="text-[30px] font-semibold leading-[34px] text-[#08070B] md:text-[34px] md:leading-[38px]">
+                End-to-End Protection at a Glance
               </h2>
               <p className="text-base leading-6 text-[#1F1E28]">
-                At each step of the process, the secure machine code and integrity are verified cryptographically. Your
-                data never leaves the protected environment unencrypted.
+                One rule matters most: plaintext exists only inside the attested TEE.
               </p>
             </div>
-            <div className="relative overflow-x-auto pb-8">
-              <div className="flex min-w-max gap-4 md:gap-6">
-                {flowSteps.map((step, index) => {
+            <div className="rounded-[28px] border border-[#d4d3e6] bg-white p-5 shadow-[0_30px_90px_-76px_rgba(15,10,80,0.45)] md:p-6">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#1F1E28]/70">
+                <span className="rounded-full border border-[#BFD5FF] bg-[#EAF1FF] px-3 py-1 text-[#103B80]">Browser</span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
+                <span className="rounded-full border border-[#BCE9D0] bg-[#E8F8EF] px-3 py-1 text-[#17633B]">
+                  Attested TEE
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
+                <span className="rounded-full border border-[#D7D5EB] bg-[#F5F4FB] px-3 py-1 text-[#312A57]">Browser</span>
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-[#1F1E28]">
+                <span className="font-semibold text-[#08070B]">Key guarantee:</span> your data is encrypted in transit
+                and only decrypted inside the verified enclave.
+              </p>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {securityQuickSteps.map((step) => {
                   const Icon = step.icon
-                  const isLast = index === flowSteps.length - 1
                   return (
-                    <div key={index} className="flex items-start gap-4">
-                      <div className="flex min-w-[200px] flex-col gap-4 rounded-[28px] border border-[#d4d3e6] bg-white p-6 shadow-[0_32px_78px_-64px_rgba(15,10,80,0.35)] md:min-w-[220px]">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1B0986]">
-                            <Icon className="h-5 w-5 text-white" />
-                          </div>
-                          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100">
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <h3 className="text-base font-semibold leading-5 text-[#08070B]">{step.title}</h3>
-                          <p className="text-sm leading-5 text-[#1F1E28]/80">{step.description}</p>
-                        </div>
+                    <div key={step.title} className="rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] px-4 py-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]">
+                        <Icon className="h-4 w-4 text-white" />
                       </div>
-                      {!isLast && (
-                        <div className="flex items-center pt-6">
-                          <ArrowRight className="h-6 w-6 text-[#1B0986]" />
-                        </div>
-                      )}
+                      <h3 className="mt-3 text-sm font-semibold text-[#08070B]">{step.title}</h3>
+                      <p className="mt-1 text-xs leading-5 text-[#1F1E28]/80">{step.description}</p>
                     </div>
                   )
                 })}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {securityQuickGuarantees.map((item) => (
+                  <span
+                    key={item}
+                    className="inline-flex rounded-full border border-[#d7d5eb] bg-white px-3 py-1 text-xs font-medium text-[#1F1E28]/80"
+                  >
+                    {item}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
@@ -309,7 +494,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-      <FeedbackButton source="landing" />
       {isTransitioning && <LoadingTransition message="Opening secure session..." />}
     </div>
   )
