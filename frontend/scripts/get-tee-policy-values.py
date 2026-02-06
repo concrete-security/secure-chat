@@ -273,14 +273,14 @@ def main():
 The app_compose is extracted directly from the TEE's tcb_info field.
 This is the authoritative source and will match the compose-hash.
 
-For FULL verification (bootchain + OS + app_compose):
+For secure verification (bootchain + OS + app_compose):
   - Use all the values above including NEXT_PUBLIC_ATLAS_APP_COMPOSE
   - The compose-hash will be verified: {compose_hash}
 
-For PARTIAL verification (bootchain + OS only):
-  - Don't set NEXT_PUBLIC_ATLAS_APP_COMPOSE in your .env
-  - The library will skip app_compose verification
-  - This still verifies the TEE firmware and OS image
+For relaxed verification (development/testing only):
+  - Configure this explicitly in Atlas policy (disable_runtime_verification)
+  - Do not rely on omitting NEXT_PUBLIC_ATLAS_APP_COMPOSE
+  - Keep relaxed verification disabled in production
 """.format(compose_hash=tcb_compose_hash or event_data.get('compose_hash', 'N/A')))
 
 if __name__ == "__main__":
