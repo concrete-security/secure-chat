@@ -4,7 +4,6 @@ import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCall
 
 import Link from "next/link"
 import Image from "next/image"
-import { useTheme } from "next-themes"
 import {
   ArrowDown,
   Send,
@@ -22,22 +21,19 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Key,
-  Sun,
-  Moon,
-  Info,
   Circle,
   UserCircle2,
   ExternalLink,
   Terminal,
-  ChevronDown,
+  Settings2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
 import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, categorizeAtlsError, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy, type AtlsErrorCategory, type CategorizedAtlsError } from "@/lib/atlas-client"
+import { scheduleAtlsAutoConnect } from "@/lib/atls-connect-scheduler"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -78,9 +74,6 @@ type AtlsLogEntry = {
 }
 
 const PROVIDER_SETTINGS_STORAGE_KEY = "confidential-provider-settings-v1"
-const PROVIDER_TOKEN_SESSION_KEY = "confidential-provider-token"
-const HERO_MESSAGE_STORAGE_KEY = "hero-initial-message"
-const HERO_FILES_STORAGE_KEY = "hero-uploaded-files"
 const GUEST_USAGE_STORAGE_KEY = "confidential-chat-guest-used"
 const GUEST_ACTIVE_SESSION_KEY = "confidential-chat-guest-active"
 const GUEST_LIMITS_ENABLED = process.env.NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS === "true"
@@ -177,6 +170,7 @@ function ConfidentialAIContent() {
   const [providerBaseUrlInput, setProviderBaseUrlInput] = useState(() => envProviderApiBase ?? "")
   const [providerApiKeyInput, setProviderApiKeyInput] = useState("")
   const [configError, setConfigError] = useState<string | null>(null)
+  const [providerSettingsRestored, setProviderSettingsRestored] = useState(false)
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -198,8 +192,15 @@ function ConfidentialAIContent() {
   const atlasFetchRef = useRef<typeof fetch | null>(null)
   const [proofDetailsModalOpen, setProofDetailsModalOpen] = useState(false)
   const [atlsLogs, setAtlsLogs] = useState<AtlsLogEntry[]>([])
+  const lastAtlsLogRef = useRef<{ level: AtlsLogEntry["level"]; message: string; atMs: number } | null>(null)
 
   const addAtlsLog = useCallback((level: AtlsLogEntry["level"], message: string) => {
+    const now = Date.now()
+    const last = lastAtlsLogRef.current
+    if (last && last.level === level && last.message === message && now - last.atMs < 1500) {
+      return
+    }
+    lastAtlsLogRef.current = { level, message, atMs: now }
     const entry: AtlsLogEntry = { timestamp: new Date(), level, message }
     setAtlsLogs(prev => [...prev, entry])
     // Also log to console
@@ -250,21 +251,7 @@ function ConfidentialAIContent() {
   const providerConfigured = Boolean(providerApiBase)
   const tokenPresent = providerApiKeyInput.trim().length > 0
   const guestLimitsEnabled = Boolean(supabase) && GUEST_LIMITS_ENABLED
-  const connectionState: "connected" | "disconnected" = providerConfigured ? "connected" : "disconnected"
-  const connectionLabel = providerConfigured ? "Connected" : "Not connected"
   const guestRestrictionActive = guestLimitsEnabled && authState === "signed-out" && guestUsageRestricted
-  const authStatusLabel =
-    !guestLimitsEnabled
-      ? "Beta preview"
-      : authState === "loading"
-        ? "Checking access…"
-        : authState === "signed-in"
-          ? authUserEmail
-            ? `Signed in as ${authUserEmail}`
-            : "Signed in"
-          : guestRestrictionActive
-            ? "Guest preview · limit reached"
-            : "Guest preview"
 
   const [messages, setMessages] = useState<Message[]>(() => [
     {
@@ -274,47 +261,13 @@ function ConfidentialAIContent() {
   ])
 
   const secureChannelReady = atlsState.status === "connected" && atlsState.attestation.trusted
-  const secureStatusLabel = secureChannelReady
-    ? "Secure session verified"
-    : atlsState.status === "connecting"
-      ? "Verifying secure session"
-      : atlsState.status === "error"
-        ? "Secure session unavailable"
-        : providerConfigured
-          ? "Secure session pending"
-          : "Secure session not configured"
-  const secureStatusSubline = secureChannelReady
-    ? "End-to-end encrypted with hardware attestation."
-    : atlsState.status === "connecting"
-      ? "Confirming server integrity before enabling chat."
-      : atlsState.status === "error"
-        ? "Verification failed. Reconnect to try again."
-        : providerConfigured
-          ? "Awaiting secure channel verification."
-          : "Add a provider base URL to start a verified session."
-  const secureTone = secureChannelReady
-    ? "ok"
-    : atlsState.status === "error"
-      ? "error"
-      : atlsState.status === "connecting"
-        ? "pending"
-        : "idle"
-  const secureDotClass =
-    secureTone === "ok"
-      ? "bg-emerald-500"
-      : secureTone === "error"
-        ? "bg-rose-500"
-        : secureTone === "pending"
-          ? "bg-sky-500 animate-pulse"
-          : "bg-slate-400"
-  const secureTextClass =
-    secureTone === "ok"
-      ? "text-emerald-700 dark:text-emerald-300"
-      : secureTone === "error"
-        ? "text-rose-700 dark:text-rose-300"
-        : secureTone === "pending"
-          ? "text-sky-700 dark:text-sky-300"
-          : "text-slate-600 dark:text-slate-300"
+
+  const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
+  const [confirmNewConversation, setConfirmNewConversation] = useState(false)
+  const newConversationTimeoutRef = useRef<number | null>(null)
+  const hasPromptedSetupRef = useRef(false)
+  const autoConnectInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
+  const lastAutoConnectRef = useRef<{ key: string; atMs: number } | null>(null)
 
   const applySupabaseSession = useCallback(
     (sessionUserEmail: string | null) => {
@@ -423,13 +376,10 @@ function ConfidentialAIContent() {
           setProviderBaseUrlInput(parsed.baseUrl)
         }
       }
-
-      const storedToken = window.sessionStorage.getItem(PROVIDER_TOKEN_SESSION_KEY)
-      if (typeof storedToken === "string") {
-        setProviderApiKeyInput(storedToken)
-      }
     } catch (error) {
       console.warn("Failed to restore provider settings", error)
+    } finally {
+      setProviderSettingsRestored(true)
     }
   }, [])
 
@@ -446,24 +396,18 @@ function ConfidentialAIContent() {
   }, [providerBaseUrlInput])
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    try {
-      const trimmed = providerApiKeyInput.trim()
-      if (trimmed) {
-        window.sessionStorage.setItem(PROVIDER_TOKEN_SESSION_KEY, trimmed)
-      } else {
-        window.sessionStorage.removeItem(PROVIDER_TOKEN_SESSION_KEY)
-      }
-    } catch (error) {
-      console.warn("Failed to persist provider token", error)
-    }
-  }, [providerApiKeyInput])
-
-  useEffect(() => {
     if (configError && configError.includes("base URL") && providerApiBase) {
       setConfigError(null)
     }
   }, [configError, providerApiBase])
+
+  useEffect(() => {
+    if (!providerSettingsRestored || hasPromptedSetupRef.current) return
+    if (!providerApiBase) {
+      setSessionDialogOpen(true)
+    }
+    hasPromptedSetupRef.current = true
+  }, [providerApiBase, providerSettingsRestored])
 
   useEffect(() => {
     setMessages((previous) => {
@@ -482,61 +426,11 @@ function ConfidentialAIContent() {
   
   const [input, setInput] = useState("")
 
-  const [encrypting, setEncrypting] = useState(false)
-  const [cipherPreview, setCipherPreview] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">("medium")
+  const reasoningEffort: "low" | "medium" | "high" = "medium"
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
-  const heroSubmissionRef = useRef<{ message: string; hasFiles: boolean } | null>(null)
-  const heroAutoSubmitAttemptedRef = useRef(false)
-  const sendMessageRef = useRef<((payload?: { text: string; files: UploadedFile[] }) => Promise<void>) | null>(null)
-  const [heroSubmissionVersion, setHeroSubmissionVersion] = useState(0)
-
-  useEffect(() => {
-    try {
-      const storedMessage = sessionStorage.getItem(HERO_MESSAGE_STORAGE_KEY)
-      const storedFiles = sessionStorage.getItem(HERO_FILES_STORAGE_KEY)
-
-      if (storedMessage === null && !storedFiles) {
-        return
-      }
-
-      let parsedFiles: UploadedFile[] = []
-      if (storedFiles) {
-        try {
-          parsedFiles = JSON.parse(storedFiles) as UploadedFile[]
-        } catch (error) {
-          console.error("Failed to parse hero files", error)
-        }
-      }
-
-      if (parsedFiles.length > 0) {
-        setUploadedFiles(parsedFiles)
-      }
-
-      const message = storedMessage ?? ""
-      const hasMessage = message.trim().length > 0
-      const hasFiles = parsedFiles.length > 0
-
-      if (hasMessage) {
-        setInput(message)
-      } else if (hasFiles) {
-        setInput("")
-      }
-
-      if (hasMessage || hasFiles) {
-        heroSubmissionRef.current = { message, hasFiles }
-        setHeroSubmissionVersion((previous) => previous + 1)
-      }
-
-      sessionStorage.removeItem(HERO_MESSAGE_STORAGE_KEY)
-      sessionStorage.removeItem(HERO_FILES_STORAGE_KEY)
-    } catch (error) {
-      console.error("Failed to restore hero submission", error)
-    }
-  }, [])
 
   // ref that will serve as the "scroll anchor" for the chat bottom
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -556,13 +450,7 @@ function ConfidentialAIContent() {
     setAutoScrollEnabled(value)
   }, [])
 
-  const { theme: currentTheme, resolvedTheme, setTheme } = useTheme()
-  const [themeReady, setThemeReady] = useState(false)
   const [cacheSalt, setCacheSalt] = useState<string | null>(null)
-
-  useEffect(() => {
-    setThemeReady(true)
-  }, [])
 
   useEffect(() => {
     const CACHE_SALT_KEY = "confidential-ai-cache-salt"
@@ -573,194 +461,219 @@ function ConfidentialAIContent() {
     }
     setCacheSalt(salt)
   }, [])
-
-  const activeTheme = (currentTheme === "system" ? resolvedTheme : currentTheme) ?? "light"
   const isStreaming = useMemo(() => messages.some((message) => message.streaming), [messages])
   const hasConversationHistory = useMemo(
     () => messages.some((message) => message.role === "user") || messages.length > 1,
     [messages]
   )
   const showScrollToLatest = !isPinnedToBottom || hasNewMessages
-  const toHexPreview = (s: string) => {
-    try {
-      const hex = Array.from(s)
-        .map((ch) => ch.charCodeAt(0).toString(16).padStart(2, "0"))
-        .join("")
-        .slice(0, 48)
-      return `0x${hex}${s.length > 24 ? "…" : ""}`
-    } catch {
-      return "0x…"
-    }
-  }
 
-  const connectAtls = useCallback(async () => {
-    // Connection settings
-    const MAX_ATTEMPTS = 3
-    const CONNECTION_TIMEOUT_MS = 30000 // 30 seconds per attempt
-    const RETRY_DELAYS = [1000, 2000, 4000] // Exponential backoff delays
+  const connectAtls = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    const connectionKey = `${providerApiBase ?? ""}|${atlsProxyUrl ?? ""}`
+    const now = Date.now()
 
-    // Categories that are worth retrying (transient failures)
-    const RETRYABLE_CATEGORIES: AtlsErrorCategory[] = ["proxy_connection", "timeout", "handshake"]
-
-    // Clear previous logs on new connection attempt
-    setAtlsLogs([])
-
-    if (!providerApiBase) {
-      addAtlsLog("info", "Waiting for provider configuration...")
-      setAtlsState({ status: "disconnected" })
-      return
-    }
-
-    // Test mode: auto-verify attestation for E2E testing (only in non-production builds)
-    if (ATTESTATION_TEST_MODE && !atlsProxyUrl) {
-      addAtlsLog("info", "Test mode: simulating attestation...")
-      setAtlsState({ status: "connecting" })
-      await new Promise(resolve => setTimeout(resolve, 500))
-      addAtlsLog("success", "Test mode: attestation auto-verified")
-      // Use regular fetch in test mode so chat messages can be sent
-      atlasFetchRef.current = fetch
-      setAtlsState({
-        status: "connected",
-        attestation: {
-          trusted: true,
-          teeType: "TEST_MODE",
-          tcbStatus: "UpToDate",
-        },
-      })
-      return
-    }
-
-    if (!atlsProxyUrl) {
-      addAtlsLog("error", "No proxy URL configured")
-      setAtlsState({ status: "error", error: "aTLS proxy URL not configured" })
-      return
-    }
-
-    const targetHost = deriveTargetHost(providerApiBase)
-    const policy = getPolicy()
-    const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
-
-    // Helper to wrap a promise with a timeout
-    const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
-      return Promise.race([
-        promise,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`Connection timed out after ${ms / 1000}s`)), ms)
-        ),
-      ])
-    }
-
-    // Attempt connection with retries
-    let lastError: CategorizedAtlsError | null = null
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const isRetry = attempt > 1
-
-      if (isRetry) {
-        const delay = RETRY_DELAYS[attempt - 2] ?? RETRY_DELAYS[RETRY_DELAYS.length - 1]
-        addAtlsLog("info", `Retrying connection in ${delay / 1000}s... (attempt ${attempt}/${MAX_ATTEMPTS})`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-
-      addAtlsLog("info", `Initiating connection to ${targetHost}${isRetry ? ` (attempt ${attempt}/${MAX_ATTEMPTS})` : ""}`)
-      setAtlsState({ status: "connecting", attempt, maxAttempts: MAX_ATTEMPTS })
-
-      try {
-        if (!isRetry) {
-          addAtlsLog("info", "Loading WASM attestation module...")
-          addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
-        }
-
-        addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
-        addAtlsLog("info", "Establishing TLS connection...")
-        addAtlsLog("info", "Performing TLS handshake with TEE server...")
-
-        await withTimeout(
-          warmupAtlasConnection(config, (att) => {
-            addAtlsLog("info", "Received attestation quote from server")
-            addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
-            addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
-            addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
-
-            if (policy.expected_bootchain?.mrtd) {
-              addAtlsLog("info", "Verifying MRTD measurement...")
-            }
-            if (policy.expected_bootchain?.rtmr0) {
-              addAtlsLog("info", "Verifying RTMR0 (firmware)...")
-            }
-            if (policy.expected_bootchain?.rtmr1) {
-              addAtlsLog("info", "Verifying RTMR1 (OS)...")
-            }
-            if (policy.expected_bootchain?.rtmr2) {
-              addAtlsLog("info", "Verifying RTMR2 (application)...")
-            }
-            if (policy.os_image_hash) {
-              addAtlsLog("info", "Verifying OS image hash...")
-            }
-            if (policy.app_compose?.docker_compose_file) {
-              addAtlsLog("info", "Verifying container image digests...")
-            }
-
-            if (att.trusted) {
-              addAtlsLog("success", "All attestation checks passed")
-              addAtlsLog("success", "Secure channel established")
-            } else {
-              addAtlsLog("warn", "Attestation verification completed with warnings")
-            }
-
-            setAtlsState({
-              status: "connected",
-              attestation: att,
-            })
-          }),
-          CONNECTION_TIMEOUT_MS
-        )
-
-        // Create the fetch client (will reuse the warmed-up connection)
-        const atlasFetch = await createAtlasClient(config)
-        atlasFetchRef.current = atlasFetch
-
-        // Success - exit the retry loop
+    if (!force) {
+      if (autoConnectInFlightRef.current?.key === connectionKey) {
+        await autoConnectInFlightRef.current.promise
         return
+      }
 
-      } catch (error) {
-        // Categorize error for user-friendly display
-        const categorized = categorizeAtlsError(error)
-        lastError = categorized
-
-        // Log the error
-        const logMessage = process.env.NODE_ENV === "production"
-          ? `Connection failed: ${categorized.message}`
-          : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
-        addAtlsLog("error", logMessage)
-
-        // Check if we should retry
-        const isRetryable = RETRYABLE_CATEGORIES.includes(categorized.category)
-        const hasMoreAttempts = attempt < MAX_ATTEMPTS
-
-        if (isRetryable && hasMoreAttempts) {
-          // Will retry in next iteration
-          continue
-        }
-
-        // Non-retryable error or out of attempts - fail immediately
-        break
+      if (
+        lastAutoConnectRef.current &&
+        lastAutoConnectRef.current.key === connectionKey &&
+        now - lastAutoConnectRef.current.atMs < 2000
+      ) {
+        return
       }
     }
 
-    // All attempts failed - set final error state
-    if (lastError) {
-      setAtlsState({
-        status: "error",
-        error: lastError.message,
-        category: lastError.category,
-        hint: lastError.hint,
-      })
+    const runPromise = (async () => {
+      // Connection settings
+      const MAX_ATTEMPTS = 3
+      const CONNECTION_TIMEOUT_MS = 30000 // 30 seconds per attempt
+      const RETRY_DELAYS = [1000, 2000, 4000] // Exponential backoff delays
+
+      // Categories that are worth retrying (transient failures)
+      const RETRYABLE_CATEGORIES: AtlsErrorCategory[] = ["proxy_connection", "timeout", "handshake"]
+
+      // Clear previous logs on new connection attempt
+      lastAtlsLogRef.current = null
+      setAtlsLogs([])
+
+      if (!providerApiBase) {
+        addAtlsLog("info", "Waiting for provider configuration...")
+        setAtlsState({ status: "disconnected" })
+        return
+      }
+
+      // Test mode: auto-verify attestation for E2E testing (only in non-production builds)
+      if (ATTESTATION_TEST_MODE && !atlsProxyUrl) {
+        addAtlsLog("info", "Test mode: simulating attestation...")
+        setAtlsState({ status: "connecting" })
+        await new Promise(resolve => setTimeout(resolve, 500))
+        addAtlsLog("success", "Test mode: attestation auto-verified")
+        // Use regular fetch in test mode so chat messages can be sent
+        atlasFetchRef.current = fetch
+        setAtlsState({
+          status: "connected",
+          attestation: {
+            trusted: true,
+            teeType: "TEST_MODE",
+            tcbStatus: "UpToDate",
+          },
+        })
+        return
+      }
+
+      if (!atlsProxyUrl) {
+        addAtlsLog("error", "No proxy URL configured")
+        setAtlsState({ status: "error", error: "aTLS proxy URL not configured" })
+        return
+      }
+
+      const targetHost = deriveTargetHost(providerApiBase)
+      const policy = getPolicy()
+      const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
+
+      // Helper to wrap a promise with a timeout
+      const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Connection timed out after ${ms / 1000}s`)), ms)
+          ),
+        ])
+      }
+
+      // Attempt connection with retries
+      let lastError: CategorizedAtlsError | null = null
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const isRetry = attempt > 1
+
+        if (isRetry) {
+          const delay = RETRY_DELAYS[attempt - 2] ?? RETRY_DELAYS[RETRY_DELAYS.length - 1]
+          addAtlsLog("info", `Retrying connection in ${delay / 1000}s... (attempt ${attempt}/${MAX_ATTEMPTS})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+
+        addAtlsLog("info", `Initiating connection to ${targetHost}${isRetry ? ` (attempt ${attempt}/${MAX_ATTEMPTS})` : ""}`)
+        setAtlsState({ status: "connecting", attempt, maxAttempts: MAX_ATTEMPTS })
+
+        try {
+          if (!isRetry) {
+            addAtlsLog("info", "Loading WASM attestation module...")
+            addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
+          }
+
+          addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
+          addAtlsLog("info", "Establishing TLS connection...")
+          addAtlsLog("info", "Performing TLS handshake with TEE server...")
+
+          await withTimeout(
+            warmupAtlasConnection(config, (att) => {
+              addAtlsLog("info", "Received attestation quote from server")
+              addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
+              addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
+              addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
+
+              if (policy.expected_bootchain?.mrtd) {
+                addAtlsLog("info", "Verifying MRTD measurement...")
+              }
+              if (policy.expected_bootchain?.rtmr0) {
+                addAtlsLog("info", "Verifying RTMR0 (firmware)...")
+              }
+              if (policy.expected_bootchain?.rtmr1) {
+                addAtlsLog("info", "Verifying RTMR1 (OS)...")
+              }
+              if (policy.expected_bootchain?.rtmr2) {
+                addAtlsLog("info", "Verifying RTMR2 (application)...")
+              }
+              if (policy.os_image_hash) {
+                addAtlsLog("info", "Verifying OS image hash...")
+              }
+              if (policy.app_compose?.docker_compose_file) {
+                addAtlsLog("info", "Verifying container image digests...")
+              }
+
+              if (att.trusted) {
+                addAtlsLog("success", "All attestation checks passed")
+                addAtlsLog("success", "Secure channel established")
+              } else {
+                addAtlsLog("warn", "Attestation verification completed with warnings")
+              }
+
+              setAtlsState({
+                status: "connected",
+                attestation: att,
+              })
+            }),
+            CONNECTION_TIMEOUT_MS
+          )
+
+          // Create the fetch client (will reuse the warmed-up connection)
+          const atlasFetch = await createAtlasClient(config)
+          atlasFetchRef.current = atlasFetch
+
+          // Success - exit the retry loop
+          return
+
+        } catch (error) {
+          // Categorize error for user-friendly display
+          const categorized = categorizeAtlsError(error)
+          lastError = categorized
+
+          // Log the error
+          const logMessage = process.env.NODE_ENV === "production"
+            ? `Connection failed: ${categorized.message}`
+            : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
+          addAtlsLog("error", logMessage)
+
+          // Check if we should retry
+          const isRetryable = RETRYABLE_CATEGORIES.includes(categorized.category)
+          const hasMoreAttempts = attempt < MAX_ATTEMPTS
+
+          if (isRetryable && hasMoreAttempts) {
+            // Will retry in next iteration
+            continue
+          }
+
+          // Non-retryable error or out of attempts - fail immediately
+          break
+        }
+      }
+
+      // All attempts failed - set final error state
+      if (lastError) {
+        setAtlsState({
+          status: "error",
+          error: lastError.message,
+          category: lastError.category,
+          hint: lastError.hint,
+        })
+      }
+    })()
+
+    if (!force) {
+      autoConnectInFlightRef.current = { key: connectionKey, promise: runPromise }
+    }
+
+    try {
+      await runPromise
+    } finally {
+      if (!force) {
+        lastAutoConnectRef.current = { key: connectionKey, atMs: Date.now() }
+        if (autoConnectInFlightRef.current?.promise === runPromise) {
+          autoConnectInFlightRef.current = null
+        }
+      }
     }
   }, [atlsProxyUrl, providerApiBase, addAtlsLog])
 
   useEffect(() => {
-    void connectAtls()
+    return scheduleAtlsAutoConnect(() => {
+      void connectAtls()
+    })
   }, [connectAtls])
 
   const AtlsProofContent = ({
@@ -959,7 +872,7 @@ function ConfidentialAIContent() {
             type="button"
             variant="secondary"
             size={isCompact ? "sm" : "default"}
-            onClick={() => void connectAtls()}
+            onClick={() => void connectAtls({ force: true })}
             disabled={atlsState.status === "connecting" || !providerApiBase}
             className={cn(
               "rounded-full font-semibold vault-outline hover:bg-[rgb(var(--vault-ink)/0.05)] hover:text-[color:rgb(var(--vault-ink))]",
@@ -1222,22 +1135,25 @@ function ConfidentialAIContent() {
     const files = event.target.files
     if (!files) return
 
+    setComposerNotice(null)
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
 
       // Check file size (limit to 100MB for all files)
-      const maxSize = 100 * 1024 * 1024 
+      const maxSize = 100 * 1024 * 1024
       if (file.size > maxSize) {
-        const maxSizeText = '100MB'
-        alert(`File "${file.name}" is too large. Maximum size is ${maxSizeText}.`)
+        setComposerNotice({
+          type: "error",
+          message: `File "${file.name}" is too large. Maximum size is 100MB.`,
+        })
         continue
       }
 
       try {
         let content: string
 
-        if (file.type === 'application/pdf') {
-          // ici
+        if (file.type === "application/pdf") {
           content = await extractTextFromPDF(file)
         } else {
           content = await file.text()
@@ -1247,24 +1163,27 @@ function ConfidentialAIContent() {
           name: file.name,
           content,
           size: file.size,
-          type: file.type || 'text/plain'
+          type: file.type || "text/plain",
         }
 
-        setUploadedFiles(prev => [...prev, uploadedFile])
+        setUploadedFiles((prev) => [...prev, uploadedFile])
       } catch (error) {
-        console.error('Error reading file:', error)
-        alert(`Failed to read file "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Error reading file:", error)
+        setComposerNotice({
+          type: "error",
+          message: `Failed to read file "${file.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+        })
       }
     }
 
     // Reset the input
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
   const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
   const formatFileSize = (bytes: number) => {
@@ -1354,27 +1273,33 @@ function ConfidentialAIContent() {
   )
 
   const handleStartNewConversation = useCallback(() => {
-    if (hasConversationHistory && typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Starting a new conversation will clear the current transcript. Conversations aren't saved automatically. Continue?"
-      )
-      if (!confirmed) {
-        return
+    if (hasConversationHistory && !confirmNewConversation) {
+      setConfirmNewConversation(true)
+      setComposerNotice({ type: "info", message: "Press New again within 5 seconds to clear this transcript." })
+      if (newConversationTimeoutRef.current !== null) {
+        window.clearTimeout(newConversationTimeoutRef.current)
       }
+      newConversationTimeoutRef.current = window.setTimeout(() => {
+        setConfirmNewConversation(false)
+      }, 5000)
+      return
     }
+
+    if (newConversationTimeoutRef.current !== null) {
+      window.clearTimeout(newConversationTimeoutRef.current)
+      newConversationTimeoutRef.current = null
+    }
+    setConfirmNewConversation(false)
+    setComposerNotice(null)
 
     const greeting = buildGreeting(providerModel, assistantName, providerHost)
     setMessages([{ role: "assistant", content: greeting }])
     setReasoningOpen({})
     setInput("")
     setUploadedFiles([])
-    setCipherPreview(null)
-    setEncrypting(false)
     setIsSending(false)
-    heroSubmissionRef.current = null
-    heroAutoSubmitAttemptedRef.current = false
     scrollToBottom("auto")
-  }, [assistantName, hasConversationHistory, providerHost, providerModel, scrollToBottom])
+  }, [assistantName, confirmNewConversation, hasConversationHistory, providerHost, providerModel, scrollToBottom])
 
   const handleSaveConversation = useCallback(() => {
     if (messages.length === 0 || typeof window === "undefined") return
@@ -1383,6 +1308,7 @@ function ConfidentialAIContent() {
     const exportPayload = {
       exportedAt,
       assistant: assistantName,
+      attachmentContentsIncluded: false,
       provider: {
         model: providerModel ?? null,
         baseUrl: providerApiBase ?? null,
@@ -1392,11 +1318,10 @@ function ConfidentialAIContent() {
         role,
         content,
         attachments:
-          attachments?.map(({ name, type, size, content }) => ({
+          attachments?.map(({ name, type, size }) => ({
             name,
             type,
             size,
-            content,
           })) ?? undefined,
         reasoning_content,
         finishReason,
@@ -1434,27 +1359,40 @@ function ConfidentialAIContent() {
     scrollToBottom("smooth")
   }, [reasoningOpen, scrollToBottom])
 
-  const sendMessage = async (override?: { text: string; files: UploadedFile[] }) => {
+  useEffect(() => {
+    return () => {
+      if (newConversationTimeoutRef.current !== null) {
+        window.clearTimeout(newConversationTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const sendMessage = async () => {
     if (isSending) return
+    setComposerNotice(null)
     if (!secureChannelReady) {
+      setComposerNotice({ type: "info", message: "Wait for secure session verification before sending." })
       return
     }
     if (guestRestrictionActive) {
       setGuestNotice("You've already used your guest confidential session. Sign in to continue.")
       return
     }
-    const rawText = override?.text ?? input
-    const activeFiles = override?.files ?? uploadedFiles
+    const rawText = input
+    const activeFiles = uploadedFiles
     const text = rawText.trim()
     if (!text && activeFiles.length === 0) return
 
     if (!providerApiBase) {
       setConfigError("Add a confidential provider base URL before starting a session.")
+      setComposerNotice({ type: "error", message: "Session setup is incomplete. Add your provider URL first." })
+      setSessionDialogOpen(true)
       return
     }
 
     if (!providerModel) {
       setConfigError("Set NEXT_PUBLIC_VLLM_MODEL in your environment before starting a session.")
+      setComposerNotice({ type: "error", message: "Model configuration is missing for this environment." })
       return
     }
 
@@ -1498,13 +1436,12 @@ function ConfidentialAIContent() {
     const conversationWithAssistant: Message[] = [...conversationBeforeAssistant, assistantPlaceholder]
     const assistantIndex = conversationWithAssistant.length - 1
 
-    setEncrypting(true)
-    setCipherPreview(toHexPreview(messageContent))
     setMessages(conversationWithAssistant)
     setReasoningOpen((prev) => ({ ...prev, [assistantIndex]: false }))
     setInput("")
     setUploadedFiles([])
     setIsSending(true)
+    setConfirmNewConversation(false)
 
     scrollToBottom("smooth")
 
@@ -1595,61 +1532,8 @@ function ConfidentialAIContent() {
       handleStreamingFollow("smooth")
     } finally {
       setIsSending(false)
-      setEncrypting(false)
-      setCipherPreview(null)
     }
   }
-
-  sendMessageRef.current = sendMessage
-
-  useEffect(() => {
-    if (heroAutoSubmitAttemptedRef.current) {
-      return
-    }
-    if (!providerApiBase) {
-      return
-    }
-    if (!secureChannelReady) {
-      return
-    }
-    const pendingSubmission = heroSubmissionRef.current
-    if (!pendingSubmission) {
-      return
-    }
-    if (guestLimitsEnabled && guestUsageRestricted) {
-      heroSubmissionRef.current = null
-      return
-    }
-
-    const pendingMessage = pendingSubmission.message ?? ""
-    const pendingFiles = pendingSubmission.hasFiles ? [...uploadedFiles] : []
-    const hasContent = pendingMessage.trim().length > 0 || pendingFiles.length > 0
-    if (!hasContent) {
-      heroSubmissionRef.current = null
-      return
-    }
-
-    if (pendingSubmission.hasFiles && pendingFiles.length === 0) {
-      heroAutoSubmitAttemptedRef.current = false
-      return
-    }
-
-    heroAutoSubmitAttemptedRef.current = true
-    const timeout = window.setTimeout(() => {
-      const send = sendMessageRef.current
-      if (!send) {
-        heroAutoSubmitAttemptedRef.current = false
-        return
-      }
-
-      heroSubmissionRef.current = null
-      void send({ text: pendingMessage, files: pendingFiles })
-    }, 600)
-
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [providerApiBase, guestLimitsEnabled, guestUsageRestricted, uploadedFiles, secureChannelReady, heroSubmissionVersion])
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -1748,18 +1632,6 @@ function ConfidentialAIContent() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {themeReady && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setTheme(activeTheme === "dark" ? "light" : "dark")}
-                          className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                          title={`Switch to ${activeTheme === "dark" ? "light" : "dark"} theme`}
-                        >
-                          {activeTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                        </Button>
-                      )}
                       <Button
                         type="button"
                         variant="ghost"
@@ -1773,29 +1645,29 @@ function ConfidentialAIContent() {
                     </div>
                   </div>
 
-                  <div className={cn(
-                    "rounded-xl border p-3 transition-colors",
-                    secureChannelReady 
-                      ? "border-emerald-500/20 bg-emerald-500/5 dark:border-emerald-500/30 dark:bg-emerald-500/10"
-                      : "border-amber-500/20 bg-amber-500/5"
-                  )}>
-                    <div className="flex items-center gap-2">
-                      <div className={cn("h-2 w-2 rounded-full animate-pulse", secureChannelReady ? "bg-emerald-500" : "bg-amber-500")} />
-                      <span className={cn("text-xs font-medium", secureChannelReady ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400")}>
-                        {secureChannelReady ? "Secure Channel Active" : "Establishing Security..."}
+                  <div className="rounded-xl border border-border/50 bg-card/40 p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <UserCircle2 className="h-3.5 w-3.5 text-brand-accent" />
+                      <span className="truncate max-w-[180px]">
+                        {authState === "signed-in" ? authUserEmail : "Guest User"}
                       </span>
-                    </div>
-                    <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
-                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <UserCircle2 className="h-3.5 w-3.5 text-brand-accent" />
-                          <span className="truncate max-w-[180px]">{authState === "signed-in" ? authUserEmail : "Guest User"}</span>
-                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Session</h3>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        onClick={() => setSessionDialogOpen(true)}
+                        title="Settings"
+                      >
+                        <Settings2 className="h-3.5 w-3.5 text-brand-primary" />
+                        <span className="text-xs">Settings</span>
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"
@@ -1841,30 +1713,6 @@ function ConfidentialAIContent() {
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
-
-                <div className="space-y-3">
-                  <p className="text-xs font-semibold text-foreground">Reasoning</p>
-                  <div className="flex flex-wrap gap-2">
-                    {["low", "medium", "high"].map((effort) => (
-                      <Button
-                        key={effort}
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className={cn(
-                          "h-8 rounded-full border px-4 text-[11px] uppercase tracking-[0.24em]",
-                          reasoningEffort === effort
-                            ? "border-brand-primary bg-brand-gradient text-white hover:brightness-110"
-                            : "border-border/40 bg-card/70 text-muted-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-muted-foreground dark:hover:bg-card/30"
-                        )}
-                        onClick={() => setReasoningEffort(effort as "low" | "medium" | "high")}
-                        disabled={isSending}
-                      >
-                        {effort}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
 
                 <div className="mt-auto pt-4 flex items-center justify-center">
                   <Link
@@ -1934,26 +1782,6 @@ function ConfidentialAIContent() {
               aria-label="Confidential space transcript"
             >
               <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
-                {/* Onboarding Banner */}
-                {messages.length <= 1 && !guestNotice && (
-                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-primary/10 via-brand-secondary/5 to-transparent p-6 border border-brand-primary/20 dark:border-brand-primary/30">
-                     <div className="relative z-10 flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-brand-primary dark:text-brand-accent dark:bg-brand-accent/10">
-                           <ShieldCheck className="h-5 w-5" />
-                        </div>
-                        <div className="space-y-2">
-                           <h3 className="font-semibold text-foreground">Welcome to Confidential AI</h3>
-                           <p className="text-sm text-muted-foreground leading-relaxed max-w-lg">
-                              This chat session is end-to-end encrypted. 
-                              Your data remains confidential. 
-                              Verify the Attestation status to have more information on system integrity.
-                           </p>
-                        </div>
-                     </div>
-                     {/* Background decoration */}
-                     <div className="absolute -top-12 -right-12 h-48 w-48 rounded-full bg-brand-primary/5 blur-3xl" />
-                  </div>
-                )}
                 {guestNotice ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1989,8 +1817,6 @@ function ConfidentialAIContent() {
                         : isAssistant && m.streaming
                           ? "Synthesising a confidential response…"
                           : m.content
-
-                  const label = isUser ? "You" : assistantName
 
                   const bubbleClass = isUser
                     ? "w-fit sm:max-w-[85%] md:max-w-3xl self-end whitespace-pre-wrap break-words rounded-3xl bg-brand-gradient px-6 py-4 text-left text-white shadow-md dark:shadow-none"
@@ -2135,139 +1961,127 @@ function ConfidentialAIContent() {
               onSubmit={onSubmit}
               className="shrink-0 border-t border-border/40 bg-white/95 px-4 py-4 shadow-inner dark:bg-card/25"
             >
-               <div className="mx-auto w-full space-y-4">
-                {uploadedFiles.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedFiles.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between rounded-xl border border-border/40 bg-white p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
-                      >
-                        <div className="flex items-center gap-2">
-                          <FileText className="size-3 text-brand-primary" />
-                          <span className="font-medium text-foreground">{file.name}</span>
-                          <span className="text-muted-foreground">
-                            ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
-                          </span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeFile(index)}
-                          className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-border/60 dark:hover:bg-card/30"
-                        >
-                          <X className="size-3" />
-                        </Button>
-                      </div>
-                    ))}
+              <div className="mx-auto w-full">
+                <div className="space-y-4 rounded-2xl border border-brand-primary/25 bg-[linear-gradient(145deg,hsl(var(--brand-primary)/0.06),hsl(var(--brand-secondary)/0.12))] p-3 shadow-sm dark:border-brand-primary/35 dark:bg-[linear-gradient(145deg,rgba(16,42,140,0.16),rgba(11,31,102,0.2))]">
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                      <Lock className={cn("h-3.5 w-3.5", secureChannelReady ? "text-emerald-600" : "text-brand-primary")} />
+                      Encrypted composer
+                    </div>
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em]",
+                        secureChannelReady
+                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300"
+                          : atlsState.status === "connecting"
+                            ? "border-sky-400/60 bg-sky-400/10 text-sky-700 dark:text-sky-300"
+                            : atlsState.status === "error"
+                              ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:text-rose-300"
+                              : "border-border/60 bg-card/50 text-muted-foreground"
+                      )}
+                    >
+                      {secureChannelReady
+                        ? "Verified"
+                        : atlsState.status === "connecting"
+                          ? "Verifying"
+                          : atlsState.status === "error"
+                            ? "Unavailable"
+                            : "Pending"}
+                    </span>
                   </div>
-                )}
 
-                {/* Input area with security indicator wrapper */}
-                {(() => {
-                  const isConnecting = atlsState.status === "connecting"
-                  const isVerified = secureChannelReady
-                  const hasFailed = atlsState.status === "error"
-                  const showSecurityState = atlsState.status !== "disconnected"
+                  {uploadedFiles.length > 0 && (
+                    <div className="space-y-2">
+                      {uploadedFiles.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between rounded-xl border border-border/40 bg-white p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
+                        >
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-3 text-brand-primary" />
+                            <span className="font-medium text-foreground">{file.name}</span>
+                            <span className="text-muted-foreground">
+                              ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(index)}
+                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-border/60 dark:hover:bg-card/30"
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                  const tooltipText = isVerified
-                    ? "Session secured with hardware protection"
-                    : isConnecting
-                      ? "Verifying security..."
-                      : hasFailed
-                        ? "Security check failed"
-                        : ""
-
-                  return (
+                  {composerNotice && (
                     <div
                       className={cn(
-                        "relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm transition-all dark:bg-card/30",
-                        showSecurityState && isVerified
-                          ? "ring-2 ring-emerald-500/40"
-                          : showSecurityState && isConnecting
-                            ? "ring-2 ring-brand-primary/30"
-                            : showSecurityState && hasFailed
-                              ? "ring-2 ring-rose-500/40"
-                              : "ring-1 ring-border/40 dark:ring-border/60"
+                        "rounded-xl border px-3 py-2 text-xs",
+                        composerNotice.type === "error"
+                          ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
+                          : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
                       )}
-                      title={tooltipText}
                     >
-                      <label htmlFor="secure-input" className="sr-only">
-                        Secure message input
-                      </label>
-                      <textarea
-                        id="secure-input"
-                        value={input}
-                        onChange={(e) => {
-                          setInput(e.target.value)
-                        }}
-                        onKeyDown={onKeyDown}
-                        disabled={isSending || guestRestrictionActive}
-                        placeholder="Type your message..."
-                        className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
-                        rows={1}
-                      />
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileUpload}
-                        multiple
-                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isSending || guestRestrictionActive}
-                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
-                        title="Upload files"
-                      >
-                        <Paperclip className="h-5 w-5" />
-                      </button>
-                      <Button
-                        type="submit"
-                        size="icon"
-                        className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-brand-primary"
-                        disabled={
-                          guestRestrictionActive ||
-                          isSending ||
-                          (!input.trim() && uploadedFiles.length === 0) ||
-                          !providerApiBase ||
-                          !secureChannelReady
-                        }
-                      >
-                        <Send className="h-4 w-4" />
-                        <span className="sr-only">Send secure message</span>
-                      </Button>
-                      {/* Security badge overlay */}
-                      {showSecurityState && (
-                        <div
-                          className={cn(
-                            "absolute -top-2 -right-2 flex items-center justify-center size-6 rounded-full border-2 border-white dark:border-background shadow-sm",
-                            isVerified
-                              ? "bg-emerald-500"
-                              : isConnecting
-                                ? "bg-brand-primary"
-                                : hasFailed
-                                  ? "bg-rose-500"
-                                  : "bg-gray-400"
-                          )}
-                        >
-                          {isVerified ? (
-                            <ShieldCheck className="h-3.5 w-3.5 text-white" />
-                          ) : isConnecting ? (
-                            <Sparkles className="h-3 w-3 text-white animate-pulse" />
-                          ) : hasFailed ? (
-                            <X className="h-3 w-3 text-white" />
-                          ) : (
-                            <Circle className="h-3 w-3 text-white" />
-                          )}
-                        </div>
-                      )}
+                      {composerNotice.message}
                     </div>
-                  )
-                })()}
+                  )}
+
+                  <div className="relative flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-2 shadow-sm ring-1 ring-border/40 dark:bg-card/30 dark:ring-border/60">
+                    <label htmlFor="secure-input" className="sr-only">
+                      Secure message input
+                    </label>
+                    <textarea
+                      id="secure-input"
+                      value={input}
+                      onChange={(e) => {
+                        setInput(e.target.value)
+                        if (composerNotice) setComposerNotice(null)
+                      }}
+                      onKeyDown={onKeyDown}
+                      disabled={isSending || guestRestrictionActive}
+                      placeholder="Type your message..."
+                      className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                      rows={1}
+                    />
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      multiple
+                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isSending || guestRestrictionActive}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
+                      title="Upload files"
+                    >
+                      <Paperclip className="h-5 w-5" />
+                    </button>
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-brand-primary"
+                      disabled={
+                        guestRestrictionActive ||
+                        isSending ||
+                        (!input.trim() && uploadedFiles.length === 0) ||
+                        !providerApiBase ||
+                        !secureChannelReady
+                      }
+                    >
+                      <Send className="h-4 w-4" />
+                      <span className="sr-only">Send secure message</span>
+                    </Button>
+                  </div>
+                </div>
               </div>
             </form>
           </div>
@@ -2278,146 +2092,117 @@ function ConfidentialAIContent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <Lock className="h-5 w-5 text-brand-primary" />
-              Secure Session
+              Session Settings
             </DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="session" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 gap-2 rounded-full border border-border/40 bg-card/80 p-1 dark:border-border/60 dark:bg-card/20">
-              <TabsTrigger
-                value="session"
-                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[linear-gradient(135deg,#102A8C,#0B1F66)] data-[state=active]:text-white"
-              >
-                Session Details
-              </TabsTrigger>
-              <TabsTrigger
-                value="proof"
-                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[linear-gradient(135deg,#102A8C,#0B1F66)] data-[state=active]:text-white"
-              >
-                Proof of Confidentiality
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="session" className="space-y-4 mt-4">
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">{connectionSummary}</p>
-                <div className="space-y-3 text-xs">
-                  {modelDisplayLabel && (
-                    <div className="flex items-center gap-2">
-                      <Bot className="size-4 text-brand-primary" />
-                      <span className="text-muted-foreground">
-                        <span className="font-medium">Model:</span>{" "}
-                        <span title={modelDisplayTitle}>{modelDisplayLabel}</span>
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Bot className="size-4 text-brand-primary" />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Assistant:</span> {assistantName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className={cn("size-4", providerConfigured ? "text-foreground" : "text-muted-foreground/50")} />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Base URL:</span>{" "}
-                      {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
-                    </span>
-                  </div>
-                  {providerHost && (
-                    <div className="flex items-center gap-2">
-                      <Globe className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground" title={providerHost}>
-                        <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Lock className="size-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Bearer token:</span>{" "}
-                      {tokenPresent ? "Loaded in session" : "Not provided (optional)"}
-                    </span>
-                  </div>
-                  {cacheSalt && (
-                    <div className="flex items-center gap-2">
-                      <Key className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground" title={cacheSalt}>
-                        <span className="font-medium">KV cache salt:</span>{" "}
-                        <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
-                      </span>
-                    </div>
-                  )}
+          <div className="space-y-3 mt-2">
+            <p className="text-sm text-muted-foreground">{connectionSummary}</p>
+            <div className="space-y-3 text-xs">
+              {modelDisplayLabel && (
+                <div className="flex items-center gap-2">
+                  <Bot className="size-4 text-brand-primary" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium">Model:</span>{" "}
+                    <span title={modelDisplayTitle}>{modelDisplayLabel}</span>
+                  </span>
                 </div>
-                <div className="pt-3">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
-                    onClick={() => setShowAdvancedSettings((previous) => !previous)}
-                  >
-                    {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
-                  </Button>
+              )}
+              <div className="flex items-center gap-2">
+                <Bot className="size-4 text-brand-primary" />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Assistant:</span> {assistantName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className={cn("size-4", providerConfigured ? "text-foreground" : "text-muted-foreground/50")} />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Base URL:</span>{" "}
+                  {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
+                </span>
+              </div>
+              {providerHost && (
+                <div className="flex items-center gap-2">
+                  <Globe className="size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground" title={providerHost}>
+                    <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
+                  </span>
                 </div>
-                {showAdvancedSettings && (
-                  <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                      Advanced provider settings
-                    </h3>
-                    <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
-                      <span className="font-medium text-foreground">Base URL</span>
-                      <input
-                        id="provider-base-url"
-                        type="url"
-                        inputMode="url"
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder="https://tee.example.com"
-                        value={providerBaseUrlInput}
-                        onChange={(event) => setProviderBaseUrlInput(event.target.value)}
-                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
-                      />
-                    </label>
-                    <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
-                      <span className="font-medium text-foreground">Bearer token (optional)</span>
-                      <input
-                        id="provider-api-key"
-                        type="password"
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder="token-..."
-                        value={providerApiKeyInput}
-                        onChange={(event) => setProviderApiKeyInput(event.target.value)}
-                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
-                      />
-                    </label>
-                    {configError && (
-                      <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-                        {configError}
-                      </div>
-                    )}
-                    <p className="text-[11px] text-muted-foreground">
-                      Stored locally. Refreshing the page clears the token (session storage).
-                    </p>
+              )}
+              <div className="flex items-center gap-2">
+                <Lock className="size-4 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Bearer token:</span>{" "}
+                  {tokenPresent ? "Loaded in session" : "Not provided (optional)"}
+                </span>
+              </div>
+              {cacheSalt && (
+                <div className="flex items-center gap-2">
+                  <Key className="size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground" title={cacheSalt}>
+                    <span className="font-medium">KV cache salt:</span>{" "}
+                    <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="pt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
+                onClick={() => setShowAdvancedSettings((previous) => !previous)}
+              >
+                {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
+              </Button>
+            </div>
+            {showAdvancedSettings && (
+              <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                  Advanced provider settings
+                </h3>
+                <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">Base URL</span>
+                  <input
+                    id="provider-base-url"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="https://tee.example.com"
+                    value={providerBaseUrlInput}
+                    onChange={(event) => setProviderBaseUrlInput(event.target.value)}
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                  />
+                </label>
+                <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">Bearer token (optional)</span>
+                  <input
+                    id="provider-api-key"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="token-..."
+                    value={providerApiKeyInput}
+                    onChange={(event) => setProviderApiKeyInput(event.target.value)}
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                  />
+                </label>
+                {configError && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                    {configError}
                   </div>
                 )}
+                <p className="text-[11px] text-muted-foreground">
+                  Base URL is stored locally for convenience. Bearer token stays in memory only and is cleared on refresh.
+                </p>
               </div>
-            </TabsContent>
-            <TabsContent value="proof" className="space-y-4 mt-4">
-              <p className="text-sm text-muted-foreground">
-                {providerApiBase
-                  ? `Secure connection to ${deriveTargetHost(providerApiBase)}.`
-                  : "Configure a provider URL to establish secure connection."}
-              </p>
-              <AtlsProofContent
-                variant="dialog"
-                onViewDetails={() => setProofDetailsModalOpen(true)}
-              />
-            </TabsContent>
-          </Tabs>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
       <AtlsDetailsModal />
-      <FeedbackButton source="confidential" position="top-right" />
+      <FeedbackButton source="confidential" position="bottom-right" />
     </div>
   )
 }

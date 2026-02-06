@@ -19,6 +19,7 @@ Example:
 import base64
 import hashlib
 import json
+import secrets
 import sys
 import urllib.request
 import urllib.error
@@ -26,7 +27,9 @@ import urllib.error
 def fetch_quote(hostname: str) -> dict:
     """Fetch TDX quote from the TEE."""
     url = f"https://{hostname}/tdx_quote"
-    data = json.dumps({"report_data": "policy-check"}).encode('utf-8')
+    # nonce_hex is required by modern attestation-service versions.
+    # 32 random bytes encoded as 64 hex chars.
+    data = json.dumps({"nonce_hex": secrets.token_hex(32)}).encode('utf-8')
 
     req = urllib.request.Request(
         url,
@@ -48,6 +51,8 @@ def fetch_quote(hostname: str) -> dict:
 
 def parse_quote(quote_hex: str) -> dict:
     """Parse TDX quote binary to extract measurements."""
+    if quote_hex.startswith("0x"):
+        quote_hex = quote_hex[2:]
     quote = bytes.fromhex(quote_hex)
 
     # TDX Quote v4 structure - TD Report starts at offset 48
@@ -68,7 +73,10 @@ def parse_quote(quote_hex: str) -> dict:
 
 def parse_event_log(event_log_str: str) -> dict:
     """Parse event log to extract key values."""
-    events = json.loads(event_log_str) if event_log_str else []
+    try:
+        events = json.loads(event_log_str) if event_log_str else []
+    except json.JSONDecodeError:
+        return {}
 
     result = {}
     for event in events:
@@ -102,6 +110,16 @@ def main():
 
     quote_data = response.get('quote', response)
     quote_hex = quote_data.get('quote', '')
+    if not quote_hex:
+        print(
+            "ERROR: /tdx_quote response is missing 'quote.quote'. "
+            "Verify CVM/atlas versions are aligned and endpoint returned a valid attestation payload.",
+            file=sys.stderr,
+        )
+        print(f"Response keys: {sorted(response.keys())}", file=sys.stderr)
+        if isinstance(quote_data, dict):
+            print(f"quote keys: {sorted(quote_data.keys())}", file=sys.stderr)
+        sys.exit(1)
     event_log_str = quote_data.get('event_log', '[]')
     vm_config_raw = quote_data.get('vm_config', {})
     # vm_config might be a JSON string or dict

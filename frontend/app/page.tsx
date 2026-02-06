@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useState, FormEvent, KeyboardEvent, useRef } from "react"
+import { useState, FormEvent, KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
@@ -12,8 +12,6 @@ import {
   CircuitBoard,
   Send,
   FileText,
-  Paperclip,
-  X,
   CheckCircle2,
   Brain,
 } from "lucide-react"
@@ -25,8 +23,6 @@ import { Button } from "@/components/ui/button"
 import AnnouncementBar from "@/components/announcement-bar"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
 
-const HERO_MESSAGE_STORAGE_KEY = "hero-initial-message"
-const HERO_FILES_STORAGE_KEY = "hero-uploaded-files"
 const examplePrompts: ExampleTheme[] = Object.values(EXAMPLE_THEMES)
 const flowSteps = [
   {
@@ -66,40 +62,16 @@ const flowSteps = [
   },
 ]
 
-type UploadedFile = { name: string; content: string; size: number; type: string }
-
 export default function LandingPage() {
   const router = useRouter()
   const [input, setInput] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  // Track which example theme is currently loading (null = none)
-  const [loadingExampleId, setLoadingExampleId] = useState<string | null>(null)
-  // Track loading and selected example theme
   const [selectedExampleId, setSelectedExampleId] = useState<string | null>(null)
-  // Progress (0..100) for the currently loading example
-  const [loadingProgress, setLoadingProgress] = useState(0)
-  // Keep timer ids to stop them cleanly
-  const loadingTimerRef = useRef<number | null>(null)
-  const loadingTimeoutRef = useRef<number | null>(null)
-  const requestIdRef = useRef(0)
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault()
     const trimmed = input.trim()
-    if (!trimmed && uploadedFiles.length === 0) return
-
-    try {
-      sessionStorage.setItem(HERO_MESSAGE_STORAGE_KEY, trimmed)
-      if (uploadedFiles.length > 0) {
-        sessionStorage.setItem(HERO_FILES_STORAGE_KEY, JSON.stringify(uploadedFiles))
-      } else {
-        sessionStorage.removeItem(HERO_FILES_STORAGE_KEY)
-      }
-    } catch (error) {
-      console.error("Failed to store hero submission", error)
-    }
+    if (!trimmed) return
 
     setIsTransitioning(true)
     setTimeout(() => {
@@ -115,157 +87,10 @@ export default function LandingPage() {
   }
 
   // Handles clicks on "Try an example" buttons
-  const handleExampleClick = async (example: ExampleTheme) => {
-
+  const handleExampleClick = (example: ExampleTheme) => {
     if (!example?.id) return
-
-    // Stop any previous loading timer
-    if (loadingTimerRef.current !== null) {
-      window.clearInterval(loadingTimerRef.current)
-      loadingTimerRef.current = null
-    }
-    if (loadingTimeoutRef.current !== null) {
-      window.clearTimeout(loadingTimeoutRef.current)
-      loadingTimeoutRef.current = null
-    }
-
-    // Reset UI when switching demos
-    setSelectedExampleId(null)
-    setUploadedFiles([])
-    setInput("")
-    setLoadingExampleId(example.id)
-    setLoadingProgress(0)
-
-    // Progress grows while downloading/parsing
-    loadingTimerRef.current = window.setInterval(() => {
-      setLoadingProgress((p) => (p >= 95 ? 95 : p + 2))
-    }, 70)
-
-    let success = false
-
-    try {
-
-      // Fetch demo documents for this theme
-      const res = await fetch(`/api/example-docs/${example.id}`)
-      if (!res.ok) throw new Error("Failed to load example files")
-
-      // Expected payload: { files: [{ name, type, data (base64) }, ...] }
-      const data: { files: { name: string; type: string; data: string }[] } = await res.json()
-
-      // Convert each base64-encoded PDF to a File, extract its text, and store it as UploadedFile
-      const newFiles: UploadedFile[] = await Promise.all(
-        data.files.map(async (f) => {
-          const binary = Uint8Array.from(atob(f.data), (c) => c.charCodeAt(0))
-          const blob = new Blob([binary], { type: f.type })
-          const file = new File([blob], f.name, { type: f.type })
-          const content = await extractTextFromPDF(file)
-
-          return { name: f.name, content, size: binary.byteLength, type: f.type }
-        }),
-      )
-
-      // Finished: fill to 100%
-      setLoadingProgress(100)
-      // Now apply the UI (files + prompt)
-      setUploadedFiles(newFiles)
-      setInput(example.prompt)
-      setSelectedExampleId(example.id)
-      success = true
-    } catch (err) {
-      console.error("Error loading example", err)
-    } finally {
-      if (loadingTimerRef.current !== null) {
-        window.clearInterval(loadingTimerRef.current)
-        loadingTimerRef.current = null
-      }
-
-      loadingTimeoutRef.current = window.setTimeout(() => {
-        setLoadingExampleId(null)
-        setLoadingProgress(0)
-        if (!success) setSelectedExampleId(null)
-        loadingTimeoutRef.current = null
-      }, 250)
-    }
-  }
-
-
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files
-    if (!files) return
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]
-
-      const maxSize = 100 * 1024 * 1024
-      if (file.size > maxSize) {
-        alert(`File "${file.name}" is too large. Maximum size is 100MB.`)
-        continue
-      }
-
-      try {
-        let content: string
-
-        if (file.type === "application/pdf") {
-          content = await extractTextFromPDF(file)
-        } else {
-          content = await file.text()
-        }
-
-        const uploadedFile: UploadedFile = {
-          name: file.name,
-          content,
-          size: file.size,
-          type: file.type || "text/plain",
-        }
-
-        setUploadedFiles((prev) => [...prev, uploadedFile])
-      } catch (error) {
-        console.error("Error reading file:", error)
-        alert(`Failed to read file "${file.name}": ${error instanceof Error ? error.message : "Unknown error"}`)
-      }
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }
-
-  const removeFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const extractTextFromPDF = async (file: File): Promise<string> => {
-    try {
-      // @ts-expect-error - PDF.js is loaded from public folder
-      const pdfjsLibModule = await import(/* webpackIgnore: true */ "/pdfjs/pdf.mjs")
-      const pdfjsLib =
-        (pdfjsLibModule as unknown as { default?: unknown }).default ?? (window as any).pdfjsLib ?? pdfjsLibModule
-
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.mjs"
-
-      const arrayBuffer = await file.arrayBuffer()
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-      let text = ""
-
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i)
-        const textContent = await page.getTextContent()
-        const pageText = textContent.items.map((item: any) => ("str" in item ? item.str : "")).join(" ")
-        text += pageText + "\n"
-      }
-      return text.trim()
-    } catch (error) {
-      console.error("Error extracting text from PDF:", error)
-      throw new Error("Failed to extract text from PDF")
-    }
-  }
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
+    setSelectedExampleId(example.id)
+    setInput(example.prompt)
   }
 
   return (
@@ -309,31 +134,6 @@ export default function LandingPage() {
                     <Shield className="h-3.5 w-3.5 text-[#1B0986]" />
                     <span>Private channel · Secure workspace</span>
                   </div>
-                  {uploadedFiles.length > 0 && (
-                    <div className="space-y-2">
-                      {uploadedFiles.map((file, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between rounded-xl border border-[#d7d5eb] bg-white/80 p-3 text-xs text-[#1F1E28]/80"
-                        >
-                          <div className="flex items-center gap-2">
-                            <FileText className="size-3 text-[#1B0986]" />
-                            <span className="font-medium text-[#08070B]">{file.name}</span>
-                            <span className="text-[#1F1E28]/70">({formatFileSize(file.size)})</span>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeFile(index)}
-                            className="h-6 w-6 rounded-full border border-[#d7d5eb] p-0 text-[#08070B] transition hover:bg-white/80"
-                          >
-                            <X className="size-3" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <div className="flex w-full flex-col gap-3">
                     <label htmlFor="hero-input" className="sr-only">
                       Ask about your confidential documents
@@ -348,30 +148,14 @@ export default function LandingPage() {
                       className="min-h-[140px] w-full resize-none rounded-[32px] border border-[#d7d5eb] bg-white px-5 py-5 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_32px_80px_-60px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
                       rows={4}
                     />
+                    <p className="text-center text-xs text-[#1F1E28]/65">
+                      You will upload confidential files in the secure workspace. Landing inputs are not persisted.
+                    </p>
                     <div className="flex w-full items-center gap-3">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileUpload}
-                        multiple
-                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                        className="hidden"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isTransitioning}
-                        className="h-12 w-12 shrink-0 rounded-xl border border-[#d7d5eb] bg-white/80 text-[#08070B] shadow-sm transition hover:bg-white"
-                        title="Upload files"
-                      >
-                        <Paperclip className="h-4 w-4 text-[#1B0986]" />
-                      </Button>
                       <Button
                         type="submit"
-                        className="flex-1 h-12 rounded-xl bg-[linear-gradient(135deg,#1B0986,#0B0870)] text-white shadow-sm transition hover:shadow-lg disabled:bg-[#1B0986]/55 disabled:text-white/75 disabled:hover:shadow-none"
-                        disabled={isTransitioning || (!input.trim() && uploadedFiles.length === 0)}
+                        className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#1B0986,#0B0870)] text-white shadow-sm transition hover:shadow-lg disabled:bg-[#1B0986]/55 disabled:text-white/75 disabled:hover:shadow-none"
+                        disabled={isTransitioning || !input.trim()}
                       >
                         <Send className="mr-2 h-4 w-4" />
                         Start secure session
@@ -382,30 +166,27 @@ export default function LandingPage() {
                     <p className="text-xs font-medium uppercase tracking-[0.24em] text-[#1F1E28]/60">Try an example:</p>
                     <div className="flex flex-wrap justify-center gap-2">
                       {examplePrompts.map((example) => {
-                      const isLoading = loadingExampleId === example.id
                       const isSelected = selectedExampleId === example.id
-
-                      const fillPercent = isLoading ? loadingProgress : isSelected ? 100 : 0
 
                       return (
                         <button
                           key={example.id}
                           type="button"
                           onClick={() => handleExampleClick(example)}
-                          disabled={isTransitioning || loadingExampleId !== null}
+                          disabled={isTransitioning}
                           className={[
                               "relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs overflow-hidden transition",
-                            fillPercent > 0
+                            isSelected
                               ? "border-transparent"
                               : "border-[#d7d5eb] bg-white/80 text-[#1F1E28]/80 hover:bg-white hover:text-[#08070B]",
                           ].join(" ")}
                           >
                             {/* Fill layer: left -> right */}
-                            {fillPercent > 0 && (
+                            {isSelected && (
                               <span
                                 aria-hidden="true"
                                 className="absolute inset-0 example-fill z-0"
-                                style={{ transform: `scaleX(${fillPercent / 100})` }}
+                                style={{ transform: "scaleX(1)" }}
                               />
                             )}
 
@@ -417,11 +198,11 @@ export default function LandingPage() {
                               <span className="text-[#08070B]">{example.buttonLabel}</span>
 
                               {/* White text overlay (no icon here) */}
-                              {fillPercent > 0 && (
+                              {isSelected && (
                                 <span
                                   aria-hidden="true"
                                   className="absolute inset-0 text-white pointer-events-none overflow-hidden"
-                                  style={{ clipPath: `inset(0 ${100 - fillPercent}% 0 0)` }}
+                                  style={{ clipPath: "inset(0 0 0 0)" }}
                                 >
                                   {example.buttonLabel}
                                 </span>
@@ -521,9 +302,6 @@ export default function LandingPage() {
           <div className="flex flex-wrap gap-4">
             <Link className="transition hover:text-[#1B0986]" href="/confidential-ai">
               Confidential Chat
-            </Link>
-            <Link className="transition hover:text-[#1B0986]" href="/team">
-              Team
             </Link>
             <a className="transition hover:text-[#1B0986]" href="mailto:contact@concrete-security.com">
               Contact
