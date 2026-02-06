@@ -11,14 +11,14 @@ import logging
 import os
 import secrets
 import time
+import tomllib
 from contextlib import asynccontextmanager
-from typing import Optional, Union
+from typing import Optional
 
 from dstack_sdk import AsyncDstackClient, GetQuoteResponse
 from dstack_sdk.dstack_client import TcbInfoV05x
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 HEADER_TLS_EKM_CHANNEL_BINDING = "X-TLS-EKM-Channel-Binding"
 
@@ -30,12 +30,20 @@ logger = logging.getLogger(__name__)
 dstack_client: Optional[AsyncDstackClient] = None
 
 
-# TODO: This is to support both legacy and EKM modes
-# We will drop legacy mode in the future, keeping only nonce_hex
-class ReportDataRequest(BaseModel):
-    report_data: Optional[Union[str, bytes]] = None
-    report_data_hex: Optional[str] = None
-    nonce_hex: Optional[str] = None
+class QuoteRequest(BaseModel):
+    nonce_hex: str
+
+    @field_validator("nonce_hex")
+    @classmethod
+    def validate_nonce_hex(cls, v: str) -> str:
+        """Validate that nonce_hex is a 64-character hex string (32 bytes)."""
+        if len(v) != 64:
+            raise ValueError("nonce_hex must be exactly 64 characters (32 bytes)")
+        try:
+            bytes.fromhex(v)
+        except ValueError:
+            raise ValueError("nonce_hex must be a valid hexadecimal string")
+        return v
 
 
 class HealthResponse(BaseModel):
@@ -71,7 +79,6 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down async dstack client...")
-    # AsyncDstackClient cleanup (if needed)
     dstack_client = None
 
 
@@ -79,7 +86,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Attestation Service",
     description="TDX attestation endpoints using dstack_sdk",
-    version="0.1.0",
+    version=tomllib.load(open("pyproject.toml", "rb"))["project"]["version"],
     lifespan=lifespan,
 )
 
@@ -157,94 +164,61 @@ async def health_check():
 
 
 @app.post("/tdx_quote", response_model=QuoteResponse)
-async def post_tdx_quote(request: Request, data: ReportDataRequest):
+async def post_tdx_quote(request: Request, data: QuoteRequest):
     """
     Get TDX quote with report data.
-
-    Supports two modes:
-    1. Legacy mode: no TLS session binding
-       - Provide report_data (raw bytes) or report_data_hex (hex-encoded)
-    2. EKM mode: TLS session binding via EKM
-       - Provide nonce_hex (64-character hex string)
-       - EKM is extracted from TLS session via Nginx header
     """
 
+    logger.info("TDX quote with report data requested")
+
+    # This header is forwarded by Nginx (or other proxies that terminates TLS) with HMAC
+    # signature.
+    # Format: "{ekm_hex}:{hmac_hex}" where HMAC = HMAC-SHA256(ekm_hex, EKM_SHARED_SECRET)
+    # The signature is validated before trusting the EKM value to prevent header forgery.
+    # In order for this to work, the entity sending the header (e.g., Nginx) and this
+    # service must run in the same trusted execution environment (TLS terminated inside
+    # the TEE).
+    ekm_header = request.headers.get(HEADER_TLS_EKM_CHANNEL_BINDING)
+
+    if not ekm_header:
+        logger.error("Missing EKM header for TLS session binding")
+        raise HTTPException(
+            status_code=400,
+            detail="Missing EKM header",
+        )
+
+    # Get shared secret and validate HMAC
+    if not EKM_SHARED_SECRET:
+        logger.error("EKM_SHARED_SECRET not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error",
+        )
+
     try:
-        logger.info("TDX quote with report data requested")
+        ekm_hex = validate_and_extract_ekm(ekm_header, EKM_SHARED_SECRET)
+    except ValueError as e:
+        logger.error(f"EKM validation failed: {e}")
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid EKM header signature",
+        )
 
-        # Determine which mode to use based on provided fields
-        if data.nonce_hex is not None:
-            # This header is forwarded by Nginx (or other proxies that terminates TLS) with HMAC
-            # signature.
-            # Format: "{ekm_hex}:{hmac_hex}" where HMAC = HMAC-SHA256(ekm_hex, EKM_SHARED_SECRET)
-            # The signature is validated before trusting the EKM value to prevent header forgery.
-            # In order for this to work, the entity sending the header (e.g., Nginx) and this
-            # service must run in the same trusted execution environment (TLS terminated inside
-            # the TEE).
-            ekm_header = request.headers.get(HEADER_TLS_EKM_CHANNEL_BINDING)
+    logger.info("TDX quote requested using EKM session binding")
+    try:
+        report_data = compute_report_data(data.nonce_hex, ekm_hex)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
 
-            if not ekm_header:
-                logger.error("Missing EKM header for TLS session binding")
-                raise HTTPException(
-                    status_code=400,
-                    detail="Missing EKM header",
-                )
+    # Use the shared async dstack client
+    if dstack_client is None:
+        logger.error("Dstack client not initialized")
+        raise HTTPException(
+            status_code=500,
+            detail="Server not ready",
+        )
 
-            # Get shared secret and validate HMAC
-            if not EKM_SHARED_SECRET:
-                logger.error("EKM_SHARED_SECRET not configured")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Server configuration error",
-                )
-
-            try:
-                ekm_hex = validate_and_extract_ekm(ekm_header, EKM_SHARED_SECRET)
-            except ValueError as e:
-                logger.error(f"EKM validation failed: {e}")
-                raise HTTPException(
-                    status_code=403,
-                    detail="Invalid EKM header signature",
-                )
-
-            if len(data.nonce_hex) != 64:
-                raise HTTPException(
-                    status_code=400,
-                    detail="nonce_hex must be exactly 64 hex characters (32 bytes)",
-                )
-
-            logger.info("TDX quote requested using EKM session binding")
-            try:
-                report_data = compute_report_data(data.nonce_hex, ekm_hex)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
-
-        elif data.report_data_hex is not None and data.report_data is None:
-            # Legacy mode: hex-encoded report_data
-            logger.info("TDX quote requested using legacy report_data_hex")
-            try:
-                report_data = bytes.fromhex(data.report_data_hex)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"Invalid hex encoding: {e}")
-
-        elif data.report_data is not None and data.report_data_hex is None:
-            # Legacy mode: raw report_data
-            logger.info("TDX quote requested using legacy report_data")
-            report_data = data.report_data
-
-        else:
-            raise RequestValidationError(
-                "Exactly one of nonce_hex, report_data_hex, or report_data must be provided"
-            )
-
-        # Use the shared async dstack client
-        if dstack_client is None:
-            logger.error("Dstack client not initialized")
-            raise HTTPException(
-                status_code=500,
-                detail="Server not ready",
-            )
-
+    try:
         # Run both operations concurrently for better performance
         quote, info_response = await asyncio.gather(
             dstack_client.get_quote(report_data), dstack_client.info()
@@ -252,18 +226,22 @@ async def post_tdx_quote(request: Request, data: ReportDataRequest):
         tcb_info = info_response.tcb_info
 
         logger.info("Successfully obtained TDX quote")
-
-        return QuoteResponse(
-            success=True,
-            quote=quote,
-            tcb_info=tcb_info,
-            timestamp=str(int(time.time())),
-            quote_type="tdx",
-        )
-
     except Exception as e:
-        logger.error(f"Failed to get TDX quote: {e}")
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        logger.exception(f"Error obtaining TDX quote or TCB info: {error_msg}", stack_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"success": False, "error": str(e), "quote_type": "tdx"},
+            detail={
+                "success": False,
+                "error": "Failed to obtain TDX quote or TCB info",
+                "quote_type": "tdx",
+            },
         )
+
+    return QuoteResponse(
+        success=True,
+        quote=quote,
+        tcb_info=tcb_info,
+        timestamp=str(int(time.time())),
+        quote_type="tdx",
+    )

@@ -3,6 +3,9 @@ Test script for the attestation service endpoints
 """
 
 import argparse
+import hashlib
+import hmac
+import secrets
 
 import requests
 
@@ -19,10 +22,30 @@ def test_health_endpoint(base_url, **kwargs):
 
 
 def test_tdx_quote_post(base_url, no_tdx=False):
-    """Test TDX quote POST endpoint with report data"""
+    """Test TDX quote POST endpoint with nonce and EKM channel binding"""
     try:
-        payload = {"report_data": "deadbeefcafebabe"}
-        response = requests.post(f"{base_url}/tdx_quote", json=payload)
+        # Generate a random nonce (32 bytes = 64 hex characters)
+        nonce_hex = secrets.token_hex(32)
+
+        # Generate a random EKM value (32 bytes = 64 hex characters)
+        ekm_hex = secrets.token_hex(32)
+
+        # Should match what's in the Makefile
+        ekm_secret = "test_shared_secret_for_ekm_validation_min_32_chars"
+
+        # Compute HMAC signature for the EKM header
+        hmac_value = hmac.new(
+            ekm_secret.encode("utf-8"), bytes.fromhex(ekm_hex), hashlib.sha256
+        ).hexdigest()
+
+        # Create signed EKM header
+        ekm_header = f"{ekm_hex}:{hmac_value}"
+
+        # Prepare payload and headers
+        payload = {"nonce_hex": nonce_hex}
+        headers = {"X-TLS-EKM-Channel-Binding": ekm_header}
+
+        response = requests.post(f"{base_url}/tdx_quote", json=payload, headers=headers)
         print(f"TDX Quote POST: {response.status_code}")
         if response.status_code == 200:
             data = response.json()

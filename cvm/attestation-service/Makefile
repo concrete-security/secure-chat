@@ -7,6 +7,7 @@ CONTAINER_NAME = attestation-service
 CONTAINER_PORT = 8080
 HOST_PORT = 8080
 BASE_URL = http://localhost:$(HOST_PORT)
+DEV_EKM_SHARED_SECRET = test_shared_secret_for_ekm_validation_min_32_chars
 
 .PHONY: help build run test test-build test-api clean dev all
 
@@ -52,13 +53,13 @@ run: build
 ifeq ($(NO_TDX),true)
 	docker container run -d --rm -p $(HOST_PORT):$(CONTAINER_PORT) \
 		--name $(CONTAINER_NAME) \
-		-e EKM_SHARED_SECRET=test_shared_secret_for_ekm_validation_min_32_chars \
+		-e EKM_SHARED_SECRET=$(DEV_EKM_SHARED_SECRET) \
 		$(IMAGE_NAME)
 else
 	docker container run -d --rm -p $(HOST_PORT):$(CONTAINER_PORT) \
 		--name $(CONTAINER_NAME) \
 		-v /var/run/dstack.sock:/var/run/dstack.sock \
-		-e EKM_SHARED_SECRET=test_shared_secret_for_ekm_validation_min_32_chars \
+		-e EKM_SHARED_SECRET=$(DEV_EKM_SHARED_SECRET) \
 		$(IMAGE_NAME)
 endif
 
