@@ -557,6 +557,7 @@ function ConfidentialAIContent() {
       // Clear previous logs on new connection attempt
       lastAtlsLogRef.current = null
       setAtlsLogs([])
+      atlasFetchRef.current = null
 
       if (!providerApiBase) {
         addAtlsLog("info", "Waiting for provider configuration...")
@@ -629,7 +630,7 @@ function ConfidentialAIContent() {
           addAtlsLog("info", "Establishing TLS connection...")
           addAtlsLog("info", "Performing TLS handshake with TEE server...")
 
-          await withTimeout(
+          const attestation = await withTimeout(
             warmupAtlasConnection(config, (att) => {
               addAtlsLog("info", "Received attestation quote from server")
               addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
@@ -657,15 +658,9 @@ function ConfidentialAIContent() {
 
               if (att.trusted) {
                 addAtlsLog("success", "All attestation checks passed")
-                addAtlsLog("success", "Secure channel established")
               } else {
                 addAtlsLog("warn", "Attestation verification completed with warnings")
               }
-
-              setAtlsState({
-                status: "connected",
-                attestation: att,
-              })
             }),
             CONNECTION_TIMEOUT_MS
           )
@@ -673,6 +668,11 @@ function ConfidentialAIContent() {
           // Create the fetch client (will reuse the warmed-up connection)
           const atlasFetch = await createAtlasClient(config)
           atlasFetchRef.current = atlasFetch
+          addAtlsLog("success", "Secure channel established")
+          setAtlsState({
+            status: "connected",
+            attestation,
+          })
 
           // Success - exit the retry loop
           return
