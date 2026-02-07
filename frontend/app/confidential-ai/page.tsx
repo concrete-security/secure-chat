@@ -34,6 +34,13 @@ import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
 import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, categorizeAtlsError, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy, type AtlsErrorCategory, type CategorizedAtlsError } from "@/lib/atlas-client"
 import { scheduleAtlsAutoConnect } from "@/lib/atls-connect-scheduler"
+import { EXAMPLE_THEMES } from "@/lib/example-themes"
+import { DEMO_HANDOFF_STORAGE_KEY, canAutoSendDemo, parseDemoHandoffPayload } from "@/lib/demo-handoff"
+import {
+  LANDING_FILES_STORAGE_KEY,
+  LANDING_MESSAGE_STORAGE_KEY,
+  parseLandingUploadedFiles,
+} from "@/lib/landing-handoff"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -51,6 +58,22 @@ type Message = {
   reasoningEndTime?: number
 }
 type UploadedFile = { name: string; content: string; size: number; type: string }
+
+type DemoFilePayload = {
+  name: string
+  type: string
+  data: string
+}
+
+type DemoDocsResponse = {
+  files?: DemoFilePayload[]
+  error?: string
+}
+
+type SendMessageOverride = {
+  text?: string
+  files?: UploadedFile[]
+}
 
 type HostParts = {
   host: string
@@ -76,7 +99,6 @@ type AtlsLogEntry = {
 const PROVIDER_SETTINGS_STORAGE_KEY = "confidential-provider-settings-v1"
 const GUEST_USAGE_STORAGE_KEY = "confidential-chat-guest-used"
 const GUEST_ACTIVE_SESSION_KEY = "confidential-chat-guest-active"
-const LANDING_PROMPT_HANDOFF_KEY = "confidential-chat-landing-prompt"
 const GUEST_LIMITS_ENABLED = process.env.NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS === "true"
 
 function normalize(value?: string | null): string | null {
@@ -292,12 +314,12 @@ function ConfidentialAIContent() {
         : "text-slate-700 dark:text-slate-300"
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
-  const [pendingLandingPrompt, setPendingLandingPrompt] = useState<string | null>(null)
+  const [pendingDemoSend, setPendingDemoSend] = useState<SendMessageOverride | null>(null)
   const newConversationTimeoutRef = useRef<number | null>(null)
   const hasPromptedSetupRef = useRef(false)
   const autoConnectInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const lastAutoConnectRef = useRef<{ key: string; atMs: number } | null>(null)
-  const sendMessageRef = useRef<(overrideText?: string) => Promise<void>>(async () => {})
+  const sendMessageRef = useRef<(override?: SendMessageOverride) => Promise<void>>(async () => {})
 
   const sidebarIconButtonClass =
     "h-8 w-8 rounded-full border border-border/50 bg-white/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/35 hover:bg-white hover:text-foreground dark:border-white/15 dark:bg-[#101D3A] dark:text-slate-100 dark:hover:border-brand-primary/60 dark:hover:bg-[#162B57] dark:hover:text-white"
@@ -363,27 +385,6 @@ function ConfidentialAIContent() {
       subscription.unsubscribe()
     }
   }, [applySupabaseSession, supabase])
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-
-    try {
-      const fromSession = window.sessionStorage.getItem(LANDING_PROMPT_HANDOFF_KEY)
-      if (fromSession !== null) {
-        window.sessionStorage.removeItem(LANDING_PROMPT_HANDOFF_KEY)
-      }
-
-      const fromQuery = new URLSearchParams(window.location.search).get("prompt")
-      const candidate = (fromSession ?? fromQuery ?? "").trim()
-      if (candidate.length > 0) {
-        setPendingLandingPrompt(candidate)
-      }
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.warn("Failed to resolve landing prompt handoff", error)
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (!guestLimitsEnabled) {
@@ -1264,7 +1265,7 @@ function ConfidentialAIContent() {
     return count === 1 ? '1 word' : `${count} words`
   }
   // Extract only text
-  const extractTextFromPDF = async (file: File): Promise<string> => {
+  const extractTextFromPDF = useCallback(async (file: File): Promise<string> => {
     try {
       const pdfModuleUrl = `${window.location.origin}/pdfjs/pdf.mjs`
       const pdfWorkerUrl = `${window.location.origin}/pdfjs/pdf.worker.mjs`
@@ -1287,10 +1288,198 @@ function ConfidentialAIContent() {
       }
       return text.trim()
     } catch (error) {
-      console.error('Error extracting text from PDF:', error)
-      throw new Error('Failed to extract text from PDF')
+      throw new Error(
+        `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown PDF parse error"}`
+      )
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const textDecoder = new TextDecoder()
+
+    const decodeBase64 = (value: string) => {
+      const normalized = value.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/")
+      const binary = window.atob(normalized)
+      const bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index)
+      }
+      return bytes
+    }
+
+    const isPdfBytes = (bytes: Uint8Array) =>
+      bytes.length >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d
+
+    const isGitLfsPointer = (text: string) =>
+      text.startsWith("version https://git-lfs.github.com/spec/v1") && text.includes("\noid sha256:")
+
+    const loadDemoHandoff = async () => {
+      const raw = window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)
+      if (!raw) return
+      const payload = parseDemoHandoffPayload(raw)
+      if (!payload) {
+        window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        return
+      }
+
+      const example = EXAMPLE_THEMES[payload.exampleId]
+      if (!example) return
+
+      if (cancelled) return
+      setInput(example.prompt)
+      setUploadedFiles([])
+
+      try {
+        const response = await fetch(`/api/example-docs/${encodeURIComponent(payload.exampleId)}`)
+        if (!response.ok) {
+          if (cancelled) return
+          setComposerNotice({
+            type: "error",
+            message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+          })
+          if (payload.autoSend) {
+            setPendingDemoSend({
+              text: example.prompt,
+              files: [],
+            })
+          }
+          return
+        }
+
+        const docs = (await response.json()) as DemoDocsResponse
+        const files = Array.isArray(docs.files) ? docs.files : []
+        const failedFiles: string[] = []
+        const preloadedFiles: UploadedFile[] = []
+
+        for (const filePayload of files) {
+          try {
+            const bytes = decodeBase64(filePayload.data)
+            const fileType = filePayload.type || "application/pdf"
+            let content: string
+            let normalizedType = fileType
+
+            if (fileType === "application/pdf" && !isPdfBytes(bytes)) {
+              const decodedText = textDecoder.decode(bytes)
+              if (isGitLfsPointer(decodedText)) {
+                failedFiles.push(`${filePayload.name} (missing Git LFS asset)`)
+                continue
+              }
+              normalizedType = "text/plain"
+              content = decodedText
+            } else {
+              const file = new File([bytes], filePayload.name, { type: fileType })
+              content =
+                fileType === "application/pdf"
+                  ? await extractTextFromPDF(file)
+                  : await file.text()
+            }
+
+            preloadedFiles.push({
+              name: filePayload.name,
+              type: normalizedType,
+              size: bytes.byteLength,
+              content,
+            })
+          } catch {
+            failedFiles.push(filePayload.name)
+          }
+        }
+
+        if (cancelled) return
+
+        setUploadedFiles(preloadedFiles)
+        setInput(example.prompt)
+
+        if (failedFiles.length > 0) {
+          setComposerNotice({
+            type: "error",
+            message: `Some demo files could not be processed: ${failedFiles.join(", ")}`,
+          })
+        } else {
+          setComposerNotice(null)
+        }
+
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: preloadedFiles,
+          })
+        }
+      } catch (error) {
+        console.error("Failed to load demo files", error)
+        if (cancelled) return
+        setComposerNotice({
+          type: "error",
+          message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+        })
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: [],
+          })
+        }
+      } finally {
+        if (!cancelled) {
+          window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        }
+      }
+    }
+
+    void loadDemoHandoff()
+
+    return () => {
+      cancelled = true
+    }
+  }, [extractTextFromPDF])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      if (window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)) return
+
+      const rawMessage = window.sessionStorage.getItem(LANDING_MESSAGE_STORAGE_KEY)
+      const rawFiles = window.sessionStorage.getItem(LANDING_FILES_STORAGE_KEY)
+      const restoredFiles = parseLandingUploadedFiles(rawFiles)
+      const restoredMessage = (rawMessage ?? "").trim()
+      const hasMessage = restoredMessage.length > 0
+      const hasFiles = restoredFiles.length > 0
+
+      if (!hasMessage && !hasFiles) {
+        if (rawMessage !== null || rawFiles !== null) {
+          window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+          window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+        }
+        return
+      }
+
+      setInput(restoredMessage)
+      setUploadedFiles(restoredFiles)
+      setPendingDemoSend({
+        text: restoredMessage,
+        files: restoredFiles,
+      })
+      setComposerNotice(null)
+
+      window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+    }, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [])
 
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -1429,7 +1618,7 @@ function ConfidentialAIContent() {
     }
   }, [])
 
-  const sendMessage = async (overrideText?: string) => {
+  const sendMessage = async (override?: SendMessageOverride) => {
     if (isSending) return
     setComposerNotice(null)
     if (!secureChannelReady) {
@@ -1440,8 +1629,8 @@ function ConfidentialAIContent() {
       setGuestNotice("You've already used your guest confidential session. Sign in to continue.")
       return
     }
-    const rawText = overrideText ?? input
-    const activeFiles = overrideText !== undefined ? [] : uploadedFiles
+    const rawText = override?.text ?? input
+    const activeFiles = override?.files ?? uploadedFiles
     const text = rawText.trim()
     if (!text && activeFiles.length === 0) return
 
@@ -1449,12 +1638,6 @@ function ConfidentialAIContent() {
       setConfigError("Add a confidential provider base URL before starting a session.")
       setComposerNotice({ type: "error", message: "Session setup is incomplete. Add your provider URL first." })
       setSessionDialogOpen(true)
-      return
-    }
-
-    if (!providerModel) {
-      setConfigError("Set NEXT_PUBLIC_VLLM_MODEL in your environment before starting a session.")
-      setComposerNotice({ type: "error", message: "Model configuration is missing for this environment." })
       return
     }
 
@@ -1600,18 +1783,46 @@ function ConfidentialAIContent() {
   sendMessageRef.current = sendMessage
 
   useEffect(() => {
-    if (!pendingLandingPrompt) return
-    if (!secureChannelReady || !providerApiBase || !providerModel || isSending || guestRestrictionActive) return
+    if (!pendingDemoSend) return
 
-    const prompt = pendingLandingPrompt
-    setPendingLandingPrompt(null)
-    void sendMessageRef.current(prompt)
+    const readiness = {
+      pendingDemoSend: true,
+      secureChannelReady,
+      providerConfigured: Boolean(providerApiBase),
+      guestRestricted: guestRestrictionActive,
+      isSending,
+    }
+
+    if (guestRestrictionActive) {
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Sign in to send this request securely.",
+        }
+      )
+      return
+    }
+
+    if (!providerApiBase) {
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Configure session settings to send securely.",
+        }
+      )
+      return
+    }
+
+    if (!canAutoSendDemo(readiness)) return
+
+    const nextSend = pendingDemoSend
+    setPendingDemoSend(null)
+    void sendMessageRef.current(nextSend)
   }, [
     guestRestrictionActive,
     isSending,
-    pendingLandingPrompt,
+    pendingDemoSend,
     providerApiBase,
-    providerModel,
     secureChannelReady,
   ])
 
@@ -1794,13 +2005,16 @@ function ConfidentialAIContent() {
                   </AccordionItem>
                 </Accordion>
 
-                <div className="mt-auto pt-4 flex items-center justify-center">
-                  <Link
-                    href="/"
-                    className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
-                  >
-                    <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
-                  </Link>
+                <div className="mt-auto space-y-3 pt-4">
+                  <FeedbackButton source="confidential" position="inline" label="Contact" />
+                  <div className="flex items-center justify-center">
+                    <Link
+                      href="/"
+                      className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
+                    >
+                      <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
+                    </Link>
+                  </div>
                 </div>
               </>
             ) : (
@@ -1855,18 +2069,20 @@ function ConfidentialAIContent() {
             </Button>
           ) : null}
 
-          <div className="flex flex-1 min-h-0 px-3 pb-3 pt-2 sm:px-5 sm:pb-5 sm:pt-3">
+          <div className="flex flex-1 min-h-0 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0)+56px)] sm:px-5 sm:pb-5 sm:pt-3">
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-[#365082]/45 dark:bg-[linear-gradient(158deg,rgba(10,22,47,0.94),rgba(7,16,35,0.95))]">
-              <div className="pointer-events-none absolute left-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-brand-primary/35 bg-white/92 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-primary shadow-[0_12px_30px_-18px_rgba(27,9,134,0.8)] backdrop-blur dark:border-sky-300/35 dark:bg-[#102144]/85 dark:text-sky-100">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Private</span>
-              </div>
               <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0E1935]/84 sm:px-6">
-                <div className="mx-auto flex w-full max-w-4xl items-center gap-2 pl-[84px] sm:pl-[90px]">
-                  <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
-                  <p className={cn("text-sm font-semibold", secureWorkspaceTextClass)} title={secureWorkspaceHint}>
-                    {secureWorkspaceLabel}
-                  </p>
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
+                    <p className={cn("truncate text-sm font-semibold", secureWorkspaceTextClass)} title={secureWorkspaceHint}>
+                      {secureWorkspaceLabel}
+                    </p>
+                  </div>
+                  <div className="inline-flex self-start items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary sm:self-auto">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <span>Private</span>
+                  </div>
                 </div>
               </div>
               <div
@@ -2273,7 +2489,6 @@ function ConfidentialAIContent() {
         </DialogContent>
       </Dialog>
       <AtlsDetailsModal />
-      <FeedbackButton source="confidential" position="top-right" />
     </div>
   )
 }

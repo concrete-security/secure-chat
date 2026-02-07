@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useState, FormEvent, KeyboardEvent } from "react"
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
@@ -11,15 +11,22 @@ import {
   Fingerprint,
   Send,
   FileText,
+  Paperclip,
+  X,
   Brain,
 } from "lucide-react"
 
 import { LoadingTransition } from "@/components/loading-transition"
 import { ForceLightTheme } from "@/components/force-light-theme"
-import { FeedbackButton } from "@/components/feedback-button"
 import { Button } from "@/components/ui/button"
 import AnnouncementBar from "@/components/announcement-bar"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
+import { DEMO_HANDOFF_STORAGE_KEY, type DemoHandoffPayload } from "@/lib/demo-handoff"
+import {
+  LANDING_FILES_STORAGE_KEY,
+  LANDING_MESSAGE_STORAGE_KEY,
+  type LandingUploadedFile,
+} from "@/lib/landing-handoff"
 
 const examplePrompts: ExampleTheme[] = Object.values(EXAMPLE_THEMES)
 
@@ -53,45 +60,161 @@ const securityQuickGuarantees = [
   "Only your device decrypts the final output",
 ]
 
-const LANDING_PROMPT_HANDOFF_KEY = "confidential-chat-landing-prompt"
-
 export default function LandingPage() {
   const router = useRouter()
   const [input, setInput] = useState("")
   const [isTransitioning, setIsTransitioning] = useState(false)
+  const [uploadedFiles, setUploadedFiles] = useState<LandingUploadedFile[]>([])
+  const [heroNotice, setHeroNotice] = useState<string | null>(null)
   const [selectedExampleId, setSelectedExampleId] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault()
-    const trimmed = input.trim()
-    if (!trimmed) return
+  const extractTextFromPDF = useCallback(async (file: File): Promise<string> => {
+    const pdfModuleUrl = `${window.location.origin}/pdfjs/pdf.mjs`
+    const pdfWorkerUrl = `${window.location.origin}/pdfjs/pdf.worker.mjs`
+    const pdfjsLibModule = await import(/* webpackIgnore: true */ pdfModuleUrl)
+    const pdfjsLib =
+      (pdfjsLibModule as unknown as { default?: any }).default ??
+      (window as any).pdfjsLib ??
+      pdfjsLibModule
 
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
+    const arrayBuffer = await file.arrayBuffer()
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+    let text = ""
+
+    for (let i = 1; i <= pdf.numPages; i += 1) {
+      const page = await pdf.getPage(i)
+      const textContent = await page.getTextContent()
+      const pageText = textContent.items
+        .map((item: any) => ("str" in item ? item.str : ""))
+        .join(" ")
+      text += `${pageText}\n`
+    }
+    return text.trim()
+  }, [])
+
+  const persistLandingHandoff = (message: string, files: LandingUploadedFile[]) => {
     try {
-      window.sessionStorage.setItem(LANDING_PROMPT_HANDOFF_KEY, trimmed)
+      const trimmed = message.trim()
+      if (trimmed.length > 0) {
+        window.sessionStorage.setItem(LANDING_MESSAGE_STORAGE_KEY, trimmed)
+      } else {
+        window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      }
+
+      if (files.length > 0) {
+        window.sessionStorage.setItem(LANDING_FILES_STORAGE_KEY, JSON.stringify(files))
+      } else {
+        window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+      }
     } catch (error) {
       if (process.env.NODE_ENV !== "production") {
-        console.warn("Failed to persist landing prompt handoff", error)
+        console.warn("Failed to persist landing handoff payload", error)
       }
     }
+  }
 
+  const navigateToConfidentialChat = () => {
     setIsTransitioning(true)
     setTimeout(() => {
       router.push("/confidential-ai")
     }, 600)
   }
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      handleSubmit(e as unknown as FormEvent)
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault()
+    persistLandingHandoff(input, uploadedFiles)
+    navigateToConfidentialChat()
+  }
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      handleSubmit(event as unknown as FormEvent)
     }
   }
 
-  // Handles clicks on "Try an example" buttons
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files
+    if (!files) return
+
+    const acceptedFiles: LandingUploadedFile[] = []
+    const failedFileNames: string[] = []
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const maxSizeBytes = 100 * 1024 * 1024
+
+      if (file.size > maxSizeBytes) {
+        failedFileNames.push(`${file.name} (over 100MB limit)`)
+        continue
+      }
+
+      try {
+        const content =
+          file.type === "application/pdf"
+            ? await extractTextFromPDF(file)
+            : await file.text()
+
+        acceptedFiles.push({
+          name: file.name,
+          content,
+          size: file.size,
+          type: file.type || "text/plain",
+        })
+      } catch (error) {
+        failedFileNames.push(file.name)
+        if (process.env.NODE_ENV !== "production") {
+          console.warn(`Failed to load landing file ${file.name}`, error)
+        }
+      }
+    }
+
+    if (acceptedFiles.length > 0) {
+      setUploadedFiles((previous) => [...previous, ...acceptedFiles])
+    }
+
+    if (failedFileNames.length > 0) {
+      setHeroNotice(`Some files could not be processed: ${failedFileNames.join(", ")}`)
+    } else {
+      setHeroNotice(null)
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadedFiles((previous) => previous.filter((_, fileIndex) => fileIndex !== index))
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes"
+    const k = 1024
+    const units = ["Bytes", "KB", "MB"]
+    const unitIndex = Math.floor(Math.log(bytes) / Math.log(k))
+    return `${parseFloat((bytes / Math.pow(k, unitIndex)).toFixed(2))} ${units[unitIndex]}`
+  }
+
   const handleExampleClick = (example: ExampleTheme) => {
     if (!example?.id) return
     setSelectedExampleId(example.id)
-    setInput(example.prompt)
+    const payload: DemoHandoffPayload = { exampleId: example.id, autoSend: true }
+
+    try {
+      window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+      window.sessionStorage.setItem(DEMO_HANDOFF_STORAGE_KEY, JSON.stringify(payload))
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to persist demo handoff payload", error)
+      }
+    }
+
+    navigateToConfidentialChat()
   }
 
   return (
@@ -108,7 +231,7 @@ export default function LandingPage() {
               asChild
               variant="outline"
             >
-              <a href="mailto:contact@concrete-security.com">Contact us</a>
+              <a href="mailto:contact@concrete-security.com">Contact</a>
             </Button>
           </div>
         </div>
@@ -137,31 +260,82 @@ export default function LandingPage() {
                   </div>
                   <div className="flex w-full flex-col gap-3">
                     <label htmlFor="hero-input" className="sr-only">
-                      Ask about your confidential documents
+                      Ask about your confidential files
                     </label>
                     <textarea
                       id="hero-input"
                       value={input}
-                      onChange={(e) => setInput(e.target.value)}
+                      onChange={(event) => setInput(event.target.value)}
                       onKeyDown={handleKeyDown}
+                      placeholder="Ask about your confidential files..."
                       disabled={isTransitioning}
-                      placeholder="Ask about your confidential documents..."
-                      className="min-h-[140px] w-full resize-none rounded-[32px] border border-[#d7d5eb] bg-white px-5 py-5 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_32px_80px_-60px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
+                      className="min-h-[128px] w-full resize-none rounded-[28px] border border-[#d7d5eb] bg-white px-5 py-4 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_26px_70px_-58px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
                       rows={4}
                     />
-                    <p className="text-center text-xs text-[#1F1E28]/65">
-                      You will upload confidential files in the secure workspace. Landing inputs are not persisted.
-                    </p>
-                    <div className="flex w-full items-center gap-3">
+
+                    {uploadedFiles.length > 0 && (
+                      <div className="space-y-2 rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] p-3">
+                        {uploadedFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${index}`}
+                            className="flex items-center justify-between rounded-lg border border-[#d7d5eb] bg-white px-2.5 py-2 text-xs text-[#1F1E28]"
+                          >
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <FileText className="h-3.5 w-3.5 shrink-0 text-[#1B0986]" />
+                              <span className="truncate font-medium">{file.name}</span>
+                              <span className="shrink-0 text-[#1F1E28]/65">({formatFileSize(file.size)})</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeFile(index)}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#d7d5eb] text-[#1F1E28]/70 transition hover:border-[#1B0986] hover:text-[#1B0986]"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              <span className="sr-only">Remove file</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {heroNotice ? (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {heroNotice}
+                      </div>
+                    ) : null}
+
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      multiple
+                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                      className="hidden"
+                    />
+
+                    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11 rounded-xl border-[#d7d5eb] bg-white text-[#1F1E28] hover:border-[#1B0986] hover:bg-white hover:text-[#1B0986] sm:w-auto"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isTransitioning}
+                      >
+                        <Paperclip className="mr-2 h-4 w-4" />
+                        Upload files
+                      </Button>
                       <Button
                         type="submit"
                         className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#1B0986,#0B0870)] text-white shadow-sm transition hover:shadow-lg disabled:bg-[#1B0986]/55 disabled:text-white/75 disabled:hover:shadow-none"
-                        disabled={isTransitioning || !input.trim()}
+                        disabled={isTransitioning}
                       >
                         <Send className="mr-2 h-4 w-4" />
-                        Start secure session
+                        Access Umbra Confidential Chat
                       </Button>
                     </div>
+                    <p className="text-center text-xs text-[#1F1E28]/65">
+                      Text and files move to the confidential workspace and are sent only after secure session verification.
+                    </p>
                   </div>
                   <div className="flex flex-col gap-2 text-center">
                     <p className="text-xs font-medium uppercase tracking-[0.24em] text-[#1F1E28]/60">Try an example:</p>
@@ -320,7 +494,6 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-      <FeedbackButton source="landing" />
       {isTransitioning && <LoadingTransition message="Opening secure session..." />}
     </div>
   )
