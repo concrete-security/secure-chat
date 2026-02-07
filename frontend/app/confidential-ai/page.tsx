@@ -76,6 +76,7 @@ type AtlsLogEntry = {
 const PROVIDER_SETTINGS_STORAGE_KEY = "confidential-provider-settings-v1"
 const GUEST_USAGE_STORAGE_KEY = "confidential-chat-guest-used"
 const GUEST_ACTIVE_SESSION_KEY = "confidential-chat-guest-active"
+const LANDING_PROMPT_HANDOFF_KEY = "confidential-chat-landing-prompt"
 const GUEST_LIMITS_ENABLED = process.env.NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS === "true"
 
 function normalize(value?: string | null): string | null {
@@ -291,10 +292,12 @@ function ConfidentialAIContent() {
         : "text-slate-700 dark:text-slate-300"
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
+  const [pendingLandingPrompt, setPendingLandingPrompt] = useState<string | null>(null)
   const newConversationTimeoutRef = useRef<number | null>(null)
   const hasPromptedSetupRef = useRef(false)
   const autoConnectInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
   const lastAutoConnectRef = useRef<{ key: string; atMs: number } | null>(null)
+  const sendMessageRef = useRef<(overrideText?: string) => Promise<void>>(async () => {})
 
   const sidebarIconButtonClass =
     "h-8 w-8 rounded-full border border-border/50 bg-white/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/35 hover:bg-white hover:text-foreground dark:border-white/15 dark:bg-[#101D3A] dark:text-slate-100 dark:hover:border-brand-primary/60 dark:hover:bg-[#162B57] dark:hover:text-white"
@@ -360,6 +363,27 @@ function ConfidentialAIContent() {
       subscription.unsubscribe()
     }
   }, [applySupabaseSession, supabase])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    try {
+      const fromSession = window.sessionStorage.getItem(LANDING_PROMPT_HANDOFF_KEY)
+      if (fromSession !== null) {
+        window.sessionStorage.removeItem(LANDING_PROMPT_HANDOFF_KEY)
+      }
+
+      const fromQuery = new URLSearchParams(window.location.search).get("prompt")
+      const candidate = (fromSession ?? fromQuery ?? "").trim()
+      if (candidate.length > 0) {
+        setPendingLandingPrompt(candidate)
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to resolve landing prompt handoff", error)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!guestLimitsEnabled) {
@@ -540,8 +564,9 @@ function ConfidentialAIContent() {
         return
       }
 
-      // Test mode: auto-verify attestation for E2E testing (only in non-production builds)
-      if (ATTESTATION_TEST_MODE && !atlsProxyUrl) {
+      // Test mode: auto-verify attestation for E2E testing (only in non-production builds).
+      // Always prefer the deterministic test-mode path when enabled.
+      if (ATTESTATION_TEST_MODE) {
         addAtlsLog("info", "Test mode: simulating attestation...")
         setAtlsState({ status: "connecting" })
         await new Promise(resolve => setTimeout(resolve, 500))
@@ -1404,7 +1429,7 @@ function ConfidentialAIContent() {
     }
   }, [])
 
-  const sendMessage = async () => {
+  const sendMessage = async (overrideText?: string) => {
     if (isSending) return
     setComposerNotice(null)
     if (!secureChannelReady) {
@@ -1415,8 +1440,8 @@ function ConfidentialAIContent() {
       setGuestNotice("You've already used your guest confidential session. Sign in to continue.")
       return
     }
-    const rawText = input
-    const activeFiles = uploadedFiles
+    const rawText = overrideText ?? input
+    const activeFiles = overrideText !== undefined ? [] : uploadedFiles
     const text = rawText.trim()
     if (!text && activeFiles.length === 0) return
 
@@ -1571,6 +1596,24 @@ function ConfidentialAIContent() {
       setIsSending(false)
     }
   }
+
+  sendMessageRef.current = sendMessage
+
+  useEffect(() => {
+    if (!pendingLandingPrompt) return
+    if (!secureChannelReady || !providerApiBase || !providerModel || isSending || guestRestrictionActive) return
+
+    const prompt = pendingLandingPrompt
+    setPendingLandingPrompt(null)
+    void sendMessageRef.current(prompt)
+  }, [
+    guestRestrictionActive,
+    isSending,
+    pendingLandingPrompt,
+    providerApiBase,
+    providerModel,
+    secureChannelReady,
+  ])
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()

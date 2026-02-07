@@ -53,6 +53,8 @@ const securityQuickGuarantees = [
   "Only your device decrypts the final output",
 ]
 
+const LANDING_PROMPT_HANDOFF_KEY = "confidential-chat-landing-prompt"
+
 export default function LandingPage() {
   const router = useRouter()
   const [input, setInput] = useState("")
@@ -63,6 +65,14 @@ export default function LandingPage() {
     e.preventDefault()
     const trimmed = input.trim()
     if (!trimmed) return
+
+    try {
+      window.sessionStorage.setItem(LANDING_PROMPT_HANDOFF_KEY, trimmed)
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.warn("Failed to persist landing prompt handoff", error)
+      }
+    }
 
     setIsTransitioning(true)
     setTimeout(() => {
