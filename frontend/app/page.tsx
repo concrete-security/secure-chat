@@ -9,10 +9,8 @@ import {
   Shield,
   Lock,
   Fingerprint,
-  CircuitBoard,
   Send,
   FileText,
-  CheckCircle2,
   Brain,
 } from "lucide-react"
 
@@ -24,42 +22,35 @@ import AnnouncementBar from "@/components/announcement-bar"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
 
 const examplePrompts: ExampleTheme[] = Object.values(EXAMPLE_THEMES)
-const flowSteps = [
+
+type SecurityQuickStep = {
+  title: string
+  description: string
+  icon: typeof Shield
+}
+
+const securityQuickSteps: SecurityQuickStep[] = [
   {
-    title: "Client Encryption",
-    description: "Data is encrypted in your browser before transmission",
-    icon: Lock,
-  },
-  {
-    title: "Secure Machine",
-    description: "Encrypted data reaches TEE with cryptographic verification",
+    title: "Encrypt and attest",
+    description: "Your browser encrypts data and verifies the enclave identity first.",
     icon: Shield,
   },
   {
-    title: "Decryption",
-    description: "Data is decrypted inside the secure TEE environment",
-    icon: Fingerprint,
-  },
-  {
-    title: "AI Processing",
-    description: "Your documents are processed by AI within the secure environment",
+    title: "Process in TEE",
+    description: "Plaintext exists only inside the attested confidential runtime.",
     icon: Brain,
   },
   {
-    title: "Encryption",
-    description: "Results are encrypted before leaving the TEE",
-    icon: Lock,
-  },
-  {
-    title: "Client",
-    description: "Encrypted response is sent back to your browser",
-    icon: CircuitBoard,
-  },
-  {
-    title: "Decryption",
-    description: "You decrypt and view the results locally",
+    title: "Decrypt locally",
+    description: "Responses are re-encrypted and only your browser can decrypt them.",
     icon: Fingerprint,
   },
+]
+
+const securityQuickGuarantees = [
+  "Plaintext never crosses the network",
+  "Attestation is checked before processing",
+  "Only your device decrypts the final output",
 ]
 
 export default function LandingPage() {
@@ -250,47 +241,57 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <section className="px-4 pb-24" id="security-flow">
-          <div className="container flex flex-col gap-10">
-            <div className="max-w-[720px] space-y-4">
+        <section className="px-4 pb-20" id="security-flow">
+          <div className="container flex flex-col gap-6">
+            <div className="max-w-[760px] space-y-3">
               <span className="text-xs uppercase tracking-[0.4em] text-[#1F1E28]/70">Security Flow</span>
-              <h2 className="text-[34px] font-semibold leading-[38px] text-[#08070B]">
-                End-to-End Protection
+              <h2 className="text-[30px] font-semibold leading-[34px] text-[#08070B] md:text-[34px] md:leading-[38px]">
+                End-to-End Protection at a Glance
               </h2>
               <p className="text-base leading-6 text-[#1F1E28]">
-                At each step of the process, the secure machine code and integrity are verified cryptographically. Your
-                data never leaves the protected environment unencrypted.
+                One rule matters most: plaintext exists only inside the attested TEE.
               </p>
             </div>
-            <div className="relative overflow-x-auto pb-8">
-              <div className="flex min-w-max gap-4 md:gap-6">
-                {flowSteps.map((step, index) => {
+            <div className="rounded-[28px] border border-[#d4d3e6] bg-white p-5 shadow-[0_30px_90px_-76px_rgba(15,10,80,0.45)] md:p-6">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#1F1E28]/70">
+                <span className="rounded-full border border-[#BFD5FF] bg-[#EAF1FF] px-3 py-1 text-[#103B80]">Browser</span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
+                <span className="rounded-full border border-[#BCE9D0] bg-[#E8F8EF] px-3 py-1 text-[#17633B]">
+                  Attested TEE
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
+                <span className="rounded-full border border-[#D7D5EB] bg-[#F5F4FB] px-3 py-1 text-[#312A57]">Browser</span>
+              </div>
+
+              <p className="mt-4 text-sm leading-6 text-[#1F1E28]">
+                <span className="font-semibold text-[#08070B]">Key guarantee:</span> your data is encrypted in transit
+                and only decrypted inside the verified enclave.
+              </p>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {securityQuickSteps.map((step) => {
                   const Icon = step.icon
-                  const isLast = index === flowSteps.length - 1
                   return (
-                    <div key={index} className="flex items-start gap-4">
-                      <div className="flex min-w-[200px] flex-col gap-4 rounded-[28px] border border-[#d4d3e6] bg-white p-6 shadow-[0_32px_78px_-64px_rgba(15,10,80,0.35)] md:min-w-[220px]">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#1B0986]">
-                            <Icon className="h-5 w-5 text-white" />
-                          </div>
-                          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-100">
-                            <CheckCircle2 className="h-4 w-4 text-green-600" />
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <h3 className="text-base font-semibold leading-5 text-[#08070B]">{step.title}</h3>
-                          <p className="text-sm leading-5 text-[#1F1E28]/80">{step.description}</p>
-                        </div>
+                    <div key={step.title} className="rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] px-4 py-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]">
+                        <Icon className="h-4 w-4 text-white" />
                       </div>
-                      {!isLast && (
-                        <div className="flex items-center pt-6">
-                          <ArrowRight className="h-6 w-6 text-[#1B0986]" />
-                        </div>
-                      )}
+                      <h3 className="mt-3 text-sm font-semibold text-[#08070B]">{step.title}</h3>
+                      <p className="mt-1 text-xs leading-5 text-[#1F1E28]/80">{step.description}</p>
                     </div>
                   )
                 })}
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                {securityQuickGuarantees.map((item) => (
+                  <span
+                    key={item}
+                    className="inline-flex rounded-full border border-[#d7d5eb] bg-white px-3 py-1 text-xs font-medium text-[#1F1E28]/80"
+                  >
+                    {item}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
