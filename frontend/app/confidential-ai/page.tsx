@@ -289,14 +289,6 @@ function ConfidentialAIContent() {
       : atlsState.status === "error"
         ? "text-rose-700 dark:text-rose-300"
         : "text-slate-700 dark:text-slate-300"
-  const secureWorkspaceHintClass = secureChannelReady
-    ? "text-slate-600 dark:text-slate-300/80"
-    : atlsState.status === "connecting"
-      ? "text-slate-600 dark:text-slate-300/75"
-      : atlsState.status === "error"
-        ? "text-rose-700/90 dark:text-rose-200/85"
-        : "text-muted-foreground"
-
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
   const newConversationTimeoutRef = useRef<number | null>(null)
@@ -1822,19 +1814,16 @@ function ConfidentialAIContent() {
 
           <div className="flex flex-1 min-h-0 px-3 pb-3 pt-2 sm:px-5 sm:pb-5 sm:pt-3">
             <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-[#365082]/45 dark:bg-[linear-gradient(158deg,rgba(10,22,47,0.94),rgba(7,16,35,0.95))]">
+              <div className="pointer-events-none absolute left-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-full border border-brand-primary/35 bg-white/92 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-primary shadow-[0_12px_30px_-18px_rgba(27,9,134,0.8)] backdrop-blur dark:border-sky-300/35 dark:bg-[#102144]/85 dark:text-sky-100">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span>Private</span>
+              </div>
               <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0E1935]/84 sm:px-6">
-                <div className="mx-auto flex w-full max-w-4xl items-start justify-between gap-3">
-                  <div className="flex items-start gap-2.5">
-                    <span className={cn("mt-1 h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
-                    <div className="space-y-0.5">
-                      <p className={cn("text-sm font-semibold", secureWorkspaceTextClass)}>{secureWorkspaceLabel}</p>
-                      <p className={cn("text-xs", secureWorkspaceHintClass)}>{secureWorkspaceHint}</p>
-                    </div>
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary dark:border-sky-300/30 dark:bg-sky-500/12 dark:text-sky-100">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    Private
-                  </div>
+                <div className="mx-auto flex w-full max-w-4xl items-center gap-2 pl-[84px] sm:pl-[90px]">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
+                  <p className={cn("text-sm font-semibold", secureWorkspaceTextClass)} title={secureWorkspaceHint}>
+                    {secureWorkspaceLabel}
+                  </p>
                 </div>
               </div>
               <div
@@ -2241,7 +2230,7 @@ function ConfidentialAIContent() {
         </DialogContent>
       </Dialog>
       <AtlsDetailsModal />
-      <FeedbackButton source="confidential" position="bottom-right" />
+      <FeedbackButton source="confidential" position="top-right" />
     </div>
   )
 }
