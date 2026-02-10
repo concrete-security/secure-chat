@@ -10,7 +10,7 @@ Umbra is Concrete Security's Confidential AI platform—a production system that
 
 ```
 umbra/
-├── frontend/          # Next.js 15 app (React 19, TypeScript, Tailwind, shadcn/ui)
+├── frontend/          # Next.js 16 app (React 19, TypeScript, Tailwind, shadcn/ui)
 ├── cvm/               # Confidential VM services (Python/FastAPI)
 │   ├── attestation-service/   # TDX attestation (FastAPI + dstack_sdk)
 │   ├── auth-service/          # Token-based auth (HTTP server)
@@ -117,6 +117,21 @@ Use Conventional Commits: `feat(frontend): ...`, `fix(auth): ...`, `chore(cvm): 
 - Frontend tests require `FORM_TOKEN_SECRET` env var
 - E2E tests use `NEXT_PUBLIC_ATTESTATION_TEST_MODE=true` to skip real DCAP verification
 - CVM tests run against docker-compose stack; use `--dev` flag for development mode endpoints
+
+## Workflow
+
+- Use the nearest `CLAUDE.md` when editing `frontend/` or `cvm/` — they have subproject-specific instructions.
+- Prefer changes that are locally verifiable with the listed test/lint/build commands.
+- Run relevant checks after edits before finishing.
+- Add or update tests for behavior changes.
+- Keep changes local to the touched subproject; do not mix unrelated frontend/CVM/monitoring edits.
+
+## Safety
+
+- Never commit secrets; use existing `.env.example` / `.env_example` templates.
+- Do not run destructive commands unless explicitly requested.
+- Treat auth, attestation, TLS, token, and certificate flows as sensitive.
+- Do not run production deployment workflows unless explicitly requested.
 
 ## Deployment
 
