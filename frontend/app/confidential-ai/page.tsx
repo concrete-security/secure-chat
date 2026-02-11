@@ -4,13 +4,11 @@ import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCall
 
 import Link from "next/link"
 import Image from "next/image"
-import { useTheme } from "next-themes"
 import {
   ArrowDown,
   Send,
   Lock,
   ShieldCheck,
-  Cpu,
   CheckCircle2,
   Bot,
   Globe,
@@ -23,23 +21,26 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Key,
-  Sun,
-  Moon,
-  Info,
   Circle,
   UserCircle2,
-  ChevronDown,
-  AlertTriangle,
   ExternalLink,
+  Terminal,
+  Settings2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackButton } from "@/components/feedback-button"
 import { streamConfidentialChat, confidentialChatConfig } from "@/lib/confidential-chat"
-import { getAttestationServiceBaseUrl, isTdxQuoteSuccess, fetchTdxQuoteWithFallback, type TdxQuoteSuccessResponse } from "@/lib/attestation"
-import { compareReportData, normalizeHex, verifyTdxQuoteWithFallback } from "@/lib/attestation-verifier"
+import { createAtlasClient, warmupAtlasConnection, getAtlasProxyUrl, deriveTargetHost, getPolicy, parseAppComposeServices, getImageUrl, categorizeAtlsError, GITHUB_REPO_URL, DOCKER_COMPOSE_URL, type AtlasAttestationResult, type AtlasPolicy, type AtlsErrorCategory, type CategorizedAtlsError } from "@/lib/atlas-client"
+import { scheduleAtlsAutoConnect } from "@/lib/atls-connect-scheduler"
+import { EXAMPLE_THEMES } from "@/lib/example-themes"
+import { DEMO_HANDOFF_STORAGE_KEY, canAutoSendDemo, parseDemoHandoffPayload } from "@/lib/demo-handoff"
+import {
+  LANDING_FILES_STORAGE_KEY,
+  LANDING_MESSAGE_STORAGE_KEY,
+  parseLandingUploadedFiles,
+} from "@/lib/landing-handoff"
 import { Markdown } from "@/components/markdown"
 import { cn } from "@/lib/utils"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -58,6 +59,22 @@ type Message = {
 }
 type UploadedFile = { name: string; content: string; size: number; type: string }
 
+type DemoFilePayload = {
+  name: string
+  type: string
+  data: string
+}
+
+type DemoDocsResponse = {
+  files?: DemoFilePayload[]
+  error?: string
+}
+
+type SendMessageOverride = {
+  text?: string
+  files?: UploadedFile[]
+}
+
 type HostParts = {
   host: string
   hostname: string
@@ -67,54 +84,19 @@ type StoredProviderSettings = {
   baseUrl?: string
 }
 
-type AttestationSummary = {
-  teeType?: string | null
-  tcbStatus?: string | null
-  measurement?: string | null
-  advisoryIds?: string[]
+type AtlsConnectionState =
+  | { status: "disconnected" }
+  | { status: "connecting"; attempt?: number; maxAttempts?: number }
+  | { status: "connected"; attestation: AtlasAttestationResult }
+  | { status: "error"; error: string; category?: AtlsErrorCategory; hint?: string }
+
+type AtlsLogEntry = {
+  timestamp: Date
+  level: "info" | "success" | "warn" | "error"
+  message: string
 }
-
-type ProofState =
-  | { status: "idle" }
-  | { status: "loading"; reportData: string; sourceBaseUrl: string }
-  | {
-      status: "ready"
-      reportData: string
-      payload: TdxQuoteSuccessResponse
-      fetchedAt: number
-      sourceBaseUrl: string
-      attestation?: AttestationSummary
-    }
-  | { status: "error"; reportData: string; error: string; sourceBaseUrl: string }
-  | { status: "unavailable"; reason?: string }
-
-type RuntimeSignal = {
-  label: string
-  value: string
-  description?: string
-}
-
-type VerificationState =
-  | { status: "idle" }
-  | { status: "running" }
-  | {
-      status: "success"
-      quoteVerified: boolean
-      reportDataMatches: boolean | null
-      checksum?: string | null
-      quoteHex?: string | null
-      statusText?: string | null
-      testMode?: boolean
-      derivedReportData?: string | null
-      advisoryIds?: string[]
-      isOutOfDate?: boolean
-    }
-  | { status: "error"; error: string }
 
 const PROVIDER_SETTINGS_STORAGE_KEY = "confidential-provider-settings-v1"
-const PROVIDER_TOKEN_SESSION_KEY = "confidential-provider-token"
-const HERO_MESSAGE_STORAGE_KEY = "hero-initial-message"
-const HERO_FILES_STORAGE_KEY = "hero-uploaded-files"
 const GUEST_USAGE_STORAGE_KEY = "confidential-chat-guest-used"
 const GUEST_ACTIVE_SESSION_KEY = "confidential-chat-guest-active"
 const GUEST_LIMITS_ENABLED = process.env.NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS === "true"
@@ -175,103 +157,7 @@ function formatIdentifierSnippet(value: string, maxLength = 40) {
   return truncateMiddle(value, maxLength)
 }
 
-function normalizeAttestationOrigin(value?: string | null): string | null {
-  if (!value) return null
-  const trimmed = value.trim()
-  if (!trimmed) return null
 
-  const candidate = trimmed.includes("://") ? trimmed : `https://${trimmed}`
-
-  try {
-    const url = new URL(candidate)
-    if (url.protocol !== "https:" && !(url.protocol === "http:" && isLoopbackHostname(url.hostname))) {
-      return null
-    }
-    return `${url.protocol}//${url.host}`
-  } catch {
-    return null
-  }
-}
-
-function deriveAttestationOrigin(primary?: string | null, fallback?: string | null) {
-  return normalizeAttestationOrigin(primary) ?? normalizeAttestationOrigin(fallback) ?? null
-}
-
-function getHostLabelFromUrl(value: string | null) {
-  if (!value) return null
-  try {
-    return new URL(value).host
-  } catch {
-    return value
-  }
-}
-
-function getReadableError(error: unknown): string {
-  if (!error) return "Unknown error"
-  if (typeof error === "string" && error.trim().length > 0) {
-    return error.trim()
-  }
-  if (error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0) {
-    return error.message.trim()
-  }
-  if (typeof error === "object" && error !== null) {
-    const message = (error as Record<string, unknown>).message
-    if (typeof message === "string" && message.trim().length > 0) {
-      return message.trim()
-    }
-  }
-  return "Unknown error"
-}
-
-function generateReportData(bytes = 32) {
-  if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function") {
-    throw new Error("Secure randomness is unavailable in this environment.")
-  }
-  const buffer = new Uint8Array(Math.max(1, bytes))
-  crypto.getRandomValues(buffer)
-  return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("")
-}
-
-function hexStringToUint8Array(value: string): Uint8Array | null {
-  if (!value) return null
-  const stripped = value.trim().toLowerCase().replace(/^0x/, "")
-  if (!stripped || stripped.length === 0 || stripped.length % 2 !== 0) {
-    return null
-  }
-  const bytes = new Uint8Array(stripped.length / 2)
-  for (let index = 0; index < stripped.length; index += 2) {
-    const byte = Number.parseInt(stripped.slice(index, index + 2), 16)
-    if (Number.isNaN(byte)) {
-      return null
-    }
-    bytes[index / 2] = byte
-  }
-  return bytes
-}
-
-function bytesToHex(value: Uint8Array) {
-  return `0x${Array.from(value, (byte) => byte.toString(16).padStart(2, "0")).join("")}`
-}
-
-async function deriveQuoteChecksum(quoteHex: string): Promise<string | null> {
-  const normalized = normalizeHex(quoteHex)
-  if (!normalized) {
-    return null
-  }
-  const bytes = hexStringToUint8Array(normalized)
-  if (!bytes) {
-    return normalized
-  }
-  try {
-    if (typeof crypto !== "undefined" && typeof crypto.subtle?.digest === "function") {
-      const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer)
-      return bytesToHex(new Uint8Array(digest))
-    }
-  } catch (error) {
-    console.warn("[Verification] Failed to derive checksum", error)
-  }
-  return normalized
-}
 
 function generateUUID(): string {
   if (typeof crypto === "undefined") {
@@ -291,117 +177,23 @@ function generateUUID(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
 }
 
-function formatTimestampLabel(timestamp: string) {
-  const numeric = Number(timestamp)
-  if (Number.isFinite(numeric) && numeric > 0) {
-    try {
-      return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(
-        new Date(numeric * 1000)
-      )
-    } catch {
-      return new Date(numeric * 1000).toLocaleString()
-    }
-  }
-  return timestamp
-}
 
-function formatLocalTime(value: number) {
-  try {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value))
-  } catch {
-    return new Date(value).toLocaleString()
-  }
-}
-
-function summarizeQuote(value: unknown, maxLength = 84) {
-  if (value == null) return "—"
-  if (typeof value === "string") {
-    return truncateMiddle(value, maxLength)
-  }
-  try {
-    return truncateMiddle(JSON.stringify(value), maxLength)
-  } catch {
-    return "[unserializable quote payload]"
-  }
-}
-
-function formatReportDataPreview(reportData: string) {
-  if (!reportData) return "—"
-  const candidate = reportData.startsWith("0x") ? reportData : `0x${reportData}`
-  return truncateMiddle(candidate, 56)
-}
-
-function formatHexSnippet(value: string, max = 20) {
-  const normalized = value.startsWith("0x") ? value.slice(2) : value
-  if (!normalized) return "—"
-  if (normalized.length <= max) {
-    return `0x${normalized}`
-  }
-  const slice = Math.floor((max - 1) / 2)
-  return `0x${normalized.slice(0, slice)}…${normalized.slice(-slice)}`
-}
-
-const runtimeEventDescriptors: Array<{ key: string; label: string; description?: string }> = [
-  { key: "system-preparing", label: "System preparing" },
-  { key: "app-id", label: "App ID", description: "Umbra workload identifier." },
-  { key: "compose-hash", label: "Compose hash", description: "Container stack measurement." },
-  { key: "instance-id", label: "Instance ID", description: "Unique CVM launch identifier." },
-  { key: "mr-kms", label: "KMS measurement", description: "Key provider measurement." },
-  { key: "os-image-hash", label: "OS image hash", description: "Measured OS image." },
-  { key: "system-ready", label: "System ready" },
-]
-
-function extractRuntimeSignalsFromQuote(quote: unknown): RuntimeSignal[] {
-  if (!quote || typeof quote !== "object") {
-    return []
-  }
-  const typed = quote as Record<string, unknown>
-  const rawLog = typed.event_log
-  if (typeof rawLog !== "string" || rawLog.trim().length === 0) {
-    return []
-  }
-
-  try {
-    const parsed = JSON.parse(rawLog)
-    if (!Array.isArray(parsed)) return []
-    const lookup = new Map<string, Record<string, unknown>>()
-    for (const item of parsed) {
-      if (!item || typeof item !== "object") continue
-      const entry = item as Record<string, unknown>
-      const eventName = entry.event
-      if (typeof eventName === "string" && eventName.trim().length > 0) {
-        lookup.set(eventName.toLowerCase(), entry)
-      }
-    }
-
-    const signals: RuntimeSignal[] = []
-    for (const descriptor of runtimeEventDescriptors) {
-      const entry = lookup.get(descriptor.key)
-      if (!entry) continue
-      const payload = typeof entry.event_payload === "string" && entry.event_payload.trim().length > 0 ? entry.event_payload : null
-      const digest = typeof entry.digest === "string" && entry.digest.trim().length > 0 ? entry.digest : null
-      const value = payload ?? digest
-      signals.push({
-        label: descriptor.label,
-        value: value ? formatHexSnippet(value) : "Present",
-        description: descriptor.description,
-      })
-    }
-    return signals
-  } catch {
-    return []
-  }
-}
+// Test mode can ONLY be activated in non-production builds (dev/test)
+// This ensures the bypass code is dead code in production builds
+const ATTESTATION_TEST_MODE =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_ATTESTATION_TEST_MODE === "true"
 
 function ConfidentialAIContent() {
   const envProviderApiBase = normalize(confidentialChatConfig.providerApiBase)
   const envProviderModel = normalize(confidentialChatConfig.providerModel)
   const envProviderName = normalize(confidentialChatConfig.providerName)
-  const attestationBaseUrl = getAttestationServiceBaseUrl()
+  const atlsProxyUrl = getAtlasProxyUrl()
 
   const [providerBaseUrlInput, setProviderBaseUrlInput] = useState(() => envProviderApiBase ?? "")
   const [providerApiKeyInput, setProviderApiKeyInput] = useState("")
   const [configError, setConfigError] = useState<string | null>(null)
+  const [providerSettingsRestored, setProviderSettingsRestored] = useState(false)
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false)
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -419,16 +211,27 @@ function ConfidentialAIContent() {
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null)
   const [guestUsageRestricted, setGuestUsageRestricted] = useState(false)
   const [guestNotice, setGuestNotice] = useState<string | null>(null)
-  const [proofState, setProofState] = useState<ProofState>({ status: "idle" })
-  const [verificationState, setVerificationState] = useState<VerificationState>({ status: "idle" })
+  const [atlsState, setAtlsState] = useState<AtlsConnectionState>({ status: "disconnected" })
+  const atlasFetchRef = useRef<typeof fetch | null>(null)
   const [proofDetailsModalOpen, setProofDetailsModalOpen] = useState(false)
-  const proofAbortRef = useRef<AbortController | null>(null)
+  const [atlsLogs, setAtlsLogs] = useState<AtlsLogEntry[]>([])
+  const lastAtlsLogRef = useRef<{ level: AtlsLogEntry["level"]; message: string; atMs: number } | null>(null)
+
+  const addAtlsLog = useCallback((level: AtlsLogEntry["level"], message: string) => {
+    const now = Date.now()
+    const last = lastAtlsLogRef.current
+    if (last && last.level === level && last.message === message && now - last.atMs < 1500) {
+      return
+    }
+    lastAtlsLogRef.current = { level, message, atMs: now }
+    const entry: AtlsLogEntry = { timestamp: new Date(), level, message }
+    setAtlsLogs(prev => [...prev, entry])
+    // Also log to console
+    const consoleMethod = level === "error" ? console.error : level === "warn" ? console.warn : console.log
+    consoleMethod(`[aTLS] ${message}`)
+  }, [])
 
   const providerApiBase = normalize(providerBaseUrlInput)
-  const derivedAttestationOrigin = useMemo(
-    () => deriveAttestationOrigin(providerApiBase, attestationBaseUrl),
-    [providerApiBase, attestationBaseUrl]
-  )
   const providerModel = envProviderModel
   const sanitizedEnvDisplayName = sanitizeDisplayName(envProviderName)
   const sanitizedModelDisplayName = sanitizeDisplayName(providerModel)
@@ -471,21 +274,7 @@ function ConfidentialAIContent() {
   const providerConfigured = Boolean(providerApiBase)
   const tokenPresent = providerApiKeyInput.trim().length > 0
   const guestLimitsEnabled = Boolean(supabase) && GUEST_LIMITS_ENABLED
-  const connectionState: "connected" | "disconnected" = providerConfigured ? "connected" : "disconnected"
-  const connectionLabel = providerConfigured ? "Connected" : "Not connected"
   const guestRestrictionActive = guestLimitsEnabled && authState === "signed-out" && guestUsageRestricted
-  const authStatusLabel =
-    !guestLimitsEnabled
-      ? "Beta preview"
-      : authState === "loading"
-        ? "Checking access…"
-        : authState === "signed-in"
-          ? authUserEmail
-            ? `Signed in as ${authUserEmail}`
-            : "Signed in"
-          : guestRestrictionActive
-            ? "Guest preview · limit reached"
-            : "Guest preview"
 
   const [messages, setMessages] = useState<Message[]>(() => [
     {
@@ -494,14 +283,50 @@ function ConfidentialAIContent() {
     },
   ])
 
-  const runtimeSignals = useMemo(() => {
-    if (proofState.status !== "ready") return []
-    return extractRuntimeSignalsFromQuote(proofState.payload.quote)
-  }, [proofState])
+  const secureChannelReady = atlsState.status === "connected" && atlsState.attestation.trusted
+  const secureWorkspaceLabel = secureChannelReady
+    ? "Verified end-to-end encrypted workspace"
+    : atlsState.status === "connecting"
+      ? "Verifying encrypted workspace"
+      : atlsState.status === "error"
+        ? "Secure workspace unavailable"
+        : "Secure workspace pending"
+  const secureWorkspaceHint = secureChannelReady
+    ? "Messages and attachments are sent only through attested infrastructure."
+    : atlsState.status === "connecting"
+      ? "Checking enclave identity and policy before enabling secure messaging."
+      : atlsState.status === "error"
+        ? "Verification failed. Reconnect from Proof of Confidentiality."
+        : "Configure provider and complete attestation to enable secure messaging."
+  const secureWorkspaceDotClass = secureChannelReady
+    ? "bg-emerald-500"
+    : atlsState.status === "connecting"
+      ? "bg-sky-500 animate-pulse"
+      : atlsState.status === "error"
+        ? "bg-rose-500"
+        : "bg-slate-400"
+  const secureWorkspaceTextClass = secureChannelReady
+    ? "text-emerald-700 dark:text-emerald-300"
+    : atlsState.status === "connecting"
+      ? "text-sky-700 dark:text-sky-300"
+      : atlsState.status === "error"
+        ? "text-rose-700 dark:text-rose-300"
+        : "text-slate-700 dark:text-slate-300"
+  const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
+  const [confirmNewConversation, setConfirmNewConversation] = useState(false)
+  const [pendingDemoSend, setPendingDemoSend] = useState<SendMessageOverride | null>(null)
+  const newConversationTimeoutRef = useRef<number | null>(null)
+  const hasPromptedSetupRef = useRef(false)
+  const autoConnectInFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
+  const lastAutoConnectRef = useRef<{ key: string; atMs: number } | null>(null)
+  const sendMessageRef = useRef<(override?: SendMessageOverride) => Promise<void>>(async () => {})
 
-  const quoteVerified =
-    verificationState.status === "success" && verificationState.quoteVerified && verificationState.reportDataMatches === true
-  const secureChannelReady = quoteVerified
+  const sidebarIconButtonClass =
+    "h-8 w-8 rounded-full border border-border/50 bg-white/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/35 hover:bg-white hover:text-foreground dark:border-white/15 dark:bg-[#101D3A] dark:text-slate-100 dark:hover:border-brand-primary/60 dark:hover:bg-[#162B57] dark:hover:text-white"
+  const sidebarSessionButtonClass =
+    "gap-2 border-border/50 bg-card/50 text-foreground shadow-sm transition hover:bg-card/80 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:bg-white/[0.1] dark:hover:text-white"
+  const proofActionButtonClass =
+    "rounded-full border-border/50 bg-card/70 font-semibold text-foreground shadow-sm transition hover:border-brand-primary/45 hover:bg-brand-primary/10 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:border-brand-primary/55 dark:hover:bg-brand-primary/20 dark:hover:text-white"
 
   const applySupabaseSession = useCallback(
     (sessionUserEmail: string | null) => {
@@ -610,13 +435,10 @@ function ConfidentialAIContent() {
           setProviderBaseUrlInput(parsed.baseUrl)
         }
       }
-
-      const storedToken = window.sessionStorage.getItem(PROVIDER_TOKEN_SESSION_KEY)
-      if (typeof storedToken === "string") {
-        setProviderApiKeyInput(storedToken)
-      }
     } catch (error) {
       console.warn("Failed to restore provider settings", error)
+    } finally {
+      setProviderSettingsRestored(true)
     }
   }, [])
 
@@ -633,24 +455,18 @@ function ConfidentialAIContent() {
   }, [providerBaseUrlInput])
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    try {
-      const trimmed = providerApiKeyInput.trim()
-      if (trimmed) {
-        window.sessionStorage.setItem(PROVIDER_TOKEN_SESSION_KEY, trimmed)
-      } else {
-        window.sessionStorage.removeItem(PROVIDER_TOKEN_SESSION_KEY)
-      }
-    } catch (error) {
-      console.warn("Failed to persist provider token", error)
-    }
-  }, [providerApiKeyInput])
-
-  useEffect(() => {
     if (configError && configError.includes("base URL") && providerApiBase) {
       setConfigError(null)
     }
   }, [configError, providerApiBase])
+
+  useEffect(() => {
+    if (!providerSettingsRestored || hasPromptedSetupRef.current) return
+    if (!providerApiBase) {
+      setSessionDialogOpen(true)
+    }
+    hasPromptedSetupRef.current = true
+  }, [providerApiBase, providerSettingsRestored])
 
   useEffect(() => {
     setMessages((previous) => {
@@ -669,61 +485,11 @@ function ConfidentialAIContent() {
   
   const [input, setInput] = useState("")
 
-  const [encrypting, setEncrypting] = useState(false)
-  const [cipherPreview, setCipherPreview] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const [reasoningEffort, setReasoningEffort] = useState<"low" | "medium" | "high">("medium")
+  const reasoningEffort: "low" | "medium" | "high" = "medium"
   const fileInputRef = useRef<HTMLInputElement>(null)
   const chatFormRef = useRef<HTMLFormElement | null>(null)
-  const heroSubmissionRef = useRef<{ message: string; hasFiles: boolean } | null>(null)
-  const heroAutoSubmitAttemptedRef = useRef(false)
-  const sendMessageRef = useRef<((payload?: { text: string; files: UploadedFile[] }) => Promise<void>) | null>(null)
-  const [heroSubmissionVersion, setHeroSubmissionVersion] = useState(0)
-
-  useEffect(() => {
-    try {
-      const storedMessage = sessionStorage.getItem(HERO_MESSAGE_STORAGE_KEY)
-      const storedFiles = sessionStorage.getItem(HERO_FILES_STORAGE_KEY)
-
-      if (storedMessage === null && !storedFiles) {
-        return
-      }
-
-      let parsedFiles: UploadedFile[] = []
-      if (storedFiles) {
-        try {
-          parsedFiles = JSON.parse(storedFiles) as UploadedFile[]
-        } catch (error) {
-          console.error("Failed to parse hero files", error)
-        }
-      }
-
-      if (parsedFiles.length > 0) {
-        setUploadedFiles(parsedFiles)
-      }
-
-      const message = storedMessage ?? ""
-      const hasMessage = message.trim().length > 0
-      const hasFiles = parsedFiles.length > 0
-
-      if (hasMessage) {
-        setInput(message)
-      } else if (hasFiles) {
-        setInput("")
-      }
-
-      if (hasMessage || hasFiles) {
-        heroSubmissionRef.current = { message, hasFiles }
-        setHeroSubmissionVersion((previous) => previous + 1)
-      }
-
-      sessionStorage.removeItem(HERO_MESSAGE_STORAGE_KEY)
-      sessionStorage.removeItem(HERO_FILES_STORAGE_KEY)
-    } catch (error) {
-      console.error("Failed to restore hero submission", error)
-    }
-  }, [])
 
   // ref that will serve as the "scroll anchor" for the chat bottom
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -743,13 +509,7 @@ function ConfidentialAIContent() {
     setAutoScrollEnabled(value)
   }, [])
 
-  const { theme: currentTheme, resolvedTheme, setTheme } = useTheme()
-  const [themeReady, setThemeReady] = useState(false)
   const [cacheSalt, setCacheSalt] = useState<string | null>(null)
-
-  useEffect(() => {
-    setThemeReady(true)
-  }, [])
 
   useEffect(() => {
     const CACHE_SALT_KEY = "confidential-ai-cache-salt"
@@ -760,222 +520,263 @@ function ConfidentialAIContent() {
     }
     setCacheSalt(salt)
   }, [])
-
-  const activeTheme = (currentTheme === "system" ? resolvedTheme : currentTheme) ?? "light"
   const isStreaming = useMemo(() => messages.some((message) => message.streaming), [messages])
   const hasConversationHistory = useMemo(
     () => messages.some((message) => message.role === "user") || messages.length > 1,
     [messages]
   )
   const showScrollToLatest = !isPinnedToBottom || hasNewMessages
-  const toHexPreview = (s: string) => {
-    try {
-      const hex = Array.from(s)
-        .map((ch) => ch.charCodeAt(0).toString(16).padStart(2, "0"))
-        .join("")
-        .slice(0, 48)
-      return `0x${hex}${s.length > 24 ? "…" : ""}`
-    } catch {
-      return "0x…"
-    }
-  }
 
-  const runQuoteVerification = useCallback(
-    async (quote: TdxQuoteSuccessResponse, expectedReportData: string): Promise<boolean> => {
-      const rawQuote = quote.quote as Record<string, unknown> | undefined
-      const quoteHex = typeof rawQuote?.quote === "string" ? rawQuote.quote : null
-      if (!quoteHex) {
-        console.error("[Verification] Quote payload missing")
-        setVerificationState({ status: "error", error: "Quote payload missing." })
-        return false
-      }
+  const connectAtls = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    const connectionKey = `${providerApiBase ?? ""}|${atlsProxyUrl ?? ""}`
+    const now = Date.now()
 
-      const attestedReportData =
-        typeof rawQuote?.report_data === "string" && rawQuote.report_data.trim().length > 0
-          ? rawQuote.report_data
-          : expectedReportData
-
-      console.log("[Verification] Starting DCAP verification", {
-        reportData: formatReportDataPreview(attestedReportData),
-        quoteLength: quoteHex.length,
-      })
-      setVerificationState({ status: "running" })
-      try {
-        const forceTestMode = quote.test_mode === true
-        const result = await verifyTdxQuoteWithFallback(quoteHex, { forceTestMode })
-
-        console.log("[Verification] dcap-qvl result:", JSON.stringify(result, null, 2))
-
-        const statusTextRaw =
-          typeof result?.verifiedReport?.status === "string" ? result.verifiedReport.status.trim() : null
-        const statusText = statusTextRaw && statusTextRaw.length > 0 ? statusTextRaw : null
-        const testMode = result?.metadata?.testMode === true
-        const advisoryIds = Array.isArray(result?.verifiedReport?.advisory_ids)
-          ? result.verifiedReport.advisory_ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
-          : []
-        const derivedReportData = result?.reportDataHex ?? null
-        const reportDataMatches = testMode ? true : compareReportData(attestedReportData, derivedReportData)
-        const statusLower = statusText?.toLowerCase() ?? ""
-        const isOutOfDate = statusLower === "outofdate"
-        const verificationPassed = testMode ? true : Boolean(statusText && (statusLower === "uptodate" || isOutOfDate))
-        const checksum = await deriveQuoteChecksum(quoteHex)
-
-        console.log("[Verification] Verification completed", {
-          statusText,
-          quoteVerified: verificationPassed,
-          reportDataMatches,
-          checksum: checksum ? formatHexSnippet(checksum) : null,
-          checksumRaw: checksum,
-          testMode,
-          advisoryCount: advisoryIds.length,
-          quoteHexLength: quoteHex.length,
-        })
-
-        setVerificationState({
-          status: "success",
-          quoteVerified: verificationPassed,
-          reportDataMatches,
-          checksum,
-          quoteHex,
-          statusText,
-          testMode,
-          derivedReportData,
-          advisoryIds,
-          isOutOfDate,
-        })
-        return verificationPassed && reportDataMatches === true
-      } catch (error) {
-        console.error("[Verification] Verification error", error)
-        setVerificationState({ status: "error", error: getReadableError(error) })
-        return false
-      }
-    },
-    []
-  )
-
-  const refreshProof = useCallback(async () => {
-    const baseUrl = deriveAttestationOrigin(providerApiBase, attestationBaseUrl)
-    if (!baseUrl) {
-      console.warn("[Attestation] Cannot fetch quote: no attestation origin configured")
-      setProofState({
-        status: "unavailable",
-        reason: "Provide a confidential provider base URL or set NEXT_PUBLIC_ATTESTATION_BASE_URL to fetch quotes.",
-      })
-      setVerificationState({ status: "idle" })
-      return
-    }
-
-    proofAbortRef.current?.abort()
-    const controller = new AbortController()
-    proofAbortRef.current = controller
-
-    let reportData: string
-    try {
-      reportData = generateReportData()
-    } catch (error) {
-      const readable = getReadableError(error)
-      console.error("[Attestation] Unable to generate report data", error)
-      setProofState({ status: "error", reportData: "", error: readable, sourceBaseUrl: baseUrl })
-      setVerificationState({ status: "idle" })
-      return
-    }
-
-    console.log("[Attestation] Starting attestation request", { baseUrl, reportData: formatReportDataPreview(reportData) })
-    setProofState({ status: "loading", reportData, sourceBaseUrl: baseUrl })
-    setVerificationState({ status: "idle" })
-
-    try {
-      const parsed = await fetchTdxQuoteWithFallback(baseUrl, reportData, {
-        signal: controller.signal,
-      })
-
-      console.log("[Attestation] Quote fetched successfully", { 
-        quoteType: parsed.quote_type, 
-        timestamp: parsed.timestamp,
-        sourceBaseUrl: baseUrl 
-      })
-      setProofState({ status: "ready", reportData, payload: parsed, fetchedAt: Date.now(), sourceBaseUrl: baseUrl })
-      const verified = await runQuoteVerification(parsed, reportData)
-      if (!verified) {
+    if (!force) {
+      if (autoConnectInFlightRef.current?.key === connectionKey) {
+        await autoConnectInFlightRef.current.promise
         return
       }
-    } catch (error) {
-      if ((error as Error)?.name === "AbortError") {
-        console.log("[Attestation] Quote request aborted")
+
+      if (
+        lastAutoConnectRef.current &&
+        lastAutoConnectRef.current.key === connectionKey &&
+        now - lastAutoConnectRef.current.atMs < 2000
+      ) {
         return
       }
-      console.error("[Attestation] Error fetching quote", error)
-      setProofState({ status: "error", reportData, error: getReadableError(error), sourceBaseUrl: baseUrl })
     }
-  }, [providerApiBase, attestationBaseUrl, runQuoteVerification])
 
-  const handleProofRefresh = useCallback(async () => {
-    await refreshProof()
-  }, [refreshProof])
+    const runPromise = (async () => {
+      // Connection settings
+      const MAX_ATTEMPTS = 3
+      const CONNECTION_TIMEOUT_MS = 30000 // 30 seconds per attempt
+      const RETRY_DELAYS = [1000, 2000, 4000] // Exponential backoff delays
 
+      // Categories that are worth retrying (transient failures)
+      const RETRYABLE_CATEGORIES: AtlsErrorCategory[] = ["proxy_connection", "timeout", "handshake"]
 
-    useEffect(() => {
-    void refreshProof()
-    return () => {
-      proofAbortRef.current?.abort()
+      // Clear previous logs on new connection attempt
+      lastAtlsLogRef.current = null
+      setAtlsLogs([])
+      atlasFetchRef.current = null
+
+      if (!providerApiBase) {
+        addAtlsLog("info", "Waiting for provider configuration...")
+        setAtlsState({ status: "disconnected" })
+        return
+      }
+
+      // Test mode: auto-verify attestation for E2E testing (only in non-production builds).
+      // Always prefer the deterministic test-mode path when enabled.
+      if (ATTESTATION_TEST_MODE) {
+        addAtlsLog("info", "Test mode: simulating attestation...")
+        setAtlsState({ status: "connecting" })
+        await new Promise(resolve => setTimeout(resolve, 500))
+        addAtlsLog("success", "Test mode: attestation auto-verified")
+        // Use regular fetch in test mode so chat messages can be sent
+        atlasFetchRef.current = fetch
+        setAtlsState({
+          status: "connected",
+          attestation: {
+            trusted: true,
+            teeType: "TEST_MODE",
+            tcbStatus: "UpToDate",
+          },
+        })
+        return
+      }
+
+      if (!atlsProxyUrl) {
+        addAtlsLog("error", "No proxy URL configured")
+        setAtlsState({ status: "error", error: "aTLS proxy URL not configured" })
+        return
+      }
+
+      const targetHost = deriveTargetHost(providerApiBase)
+      const policy = getPolicy()
+      const config = { proxyUrl: atlsProxyUrl, targetHost, policy }
+
+      // Helper to wrap a promise with a timeout
+      const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+        return Promise.race([
+          promise,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Connection timed out after ${ms / 1000}s`)), ms)
+          ),
+        ])
+      }
+
+      // Attempt connection with retries
+      let lastError: CategorizedAtlsError | null = null
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const isRetry = attempt > 1
+
+        if (isRetry) {
+          const delay = RETRY_DELAYS[attempt - 2] ?? RETRY_DELAYS[RETRY_DELAYS.length - 1]
+          addAtlsLog("info", `Retrying connection in ${delay / 1000}s... (attempt ${attempt}/${MAX_ATTEMPTS})`)
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
+
+        addAtlsLog("info", `Initiating connection to ${targetHost}${isRetry ? ` (attempt ${attempt}/${MAX_ATTEMPTS})` : ""}`)
+        setAtlsState({ status: "connecting", attempt, maxAttempts: MAX_ATTEMPTS })
+
+        try {
+          if (!isRetry) {
+            addAtlsLog("info", "Loading WASM attestation module...")
+            addAtlsLog("info", "Verifying WASM integrity (SHA-384)...")
+          }
+
+          addAtlsLog("info", `Connecting to proxy at ${atlsProxyUrl}`)
+          addAtlsLog("info", "Establishing TLS connection...")
+          addAtlsLog("info", "Performing TLS handshake with TEE server...")
+
+          const attestation = await withTimeout(
+            warmupAtlasConnection(config, (att) => {
+              addAtlsLog("info", "Received attestation quote from server")
+              addAtlsLog("info", `TEE Type: ${att.teeType.toUpperCase()}`)
+              addAtlsLog("info", "Verifying Intel TDX quote with DCAP...")
+              addAtlsLog("info", `TCB Status: ${att.tcbStatus}`)
+
+              if (policy.expected_bootchain?.mrtd) {
+                addAtlsLog("info", "Verifying MRTD measurement...")
+              }
+              if (policy.expected_bootchain?.rtmr0) {
+                addAtlsLog("info", "Verifying RTMR0 (firmware)...")
+              }
+              if (policy.expected_bootchain?.rtmr1) {
+                addAtlsLog("info", "Verifying RTMR1 (OS)...")
+              }
+              if (policy.expected_bootchain?.rtmr2) {
+                addAtlsLog("info", "Verifying RTMR2 (application)...")
+              }
+              if (policy.os_image_hash) {
+                addAtlsLog("info", "Verifying OS image hash...")
+              }
+              if (policy.app_compose?.docker_compose_file) {
+                addAtlsLog("info", "Verifying container image digests...")
+              }
+
+              if (att.trusted) {
+                addAtlsLog("success", "All attestation checks passed")
+              } else {
+                addAtlsLog("warn", "Attestation verification completed with warnings")
+              }
+            }),
+            CONNECTION_TIMEOUT_MS
+          )
+
+          if (attestation.teeType.trim().toUpperCase() === "TEST_MODE") {
+            throw new Error(
+              "Remote attestation reported TEST_MODE. Simulated attestation is only allowed via NEXT_PUBLIC_ATTESTATION_TEST_MODE in non-production builds."
+            )
+          }
+
+          // Create the fetch client (will reuse the warmed-up connection)
+          const atlasFetch = await createAtlasClient(config)
+          atlasFetchRef.current = atlasFetch
+          addAtlsLog("success", "Secure channel established")
+          setAtlsState({
+            status: "connected",
+            attestation,
+          })
+
+          // Success - exit the retry loop
+          return
+
+        } catch (error) {
+          // Categorize error for user-friendly display
+          const categorized = categorizeAtlsError(error)
+          lastError = categorized
+
+          // Log the error
+          const logMessage = process.env.NODE_ENV === "production"
+            ? `Connection failed: ${categorized.message}`
+            : `Connection failed: ${categorized.message} - ${categorized.details ?? ""}`
+          addAtlsLog("error", logMessage)
+
+          // Check if we should retry
+          const isRetryable = RETRYABLE_CATEGORIES.includes(categorized.category)
+          const hasMoreAttempts = attempt < MAX_ATTEMPTS
+
+          if (isRetryable && hasMoreAttempts) {
+            // Will retry in next iteration
+            continue
+          }
+
+          // Non-retryable error or out of attempts - fail immediately
+          break
+        }
+      }
+
+      // All attempts failed - set final error state
+      if (lastError) {
+        setAtlsState({
+          status: "error",
+          error: lastError.message,
+          category: lastError.category,
+          hint: lastError.hint,
+        })
+      }
+    })()
+
+    if (!force) {
+      autoConnectInFlightRef.current = { key: connectionKey, promise: runPromise }
     }
-  }, [refreshProof])
 
-  const ProofContent = ({
+    try {
+      await runPromise
+    } finally {
+      if (!force) {
+        lastAutoConnectRef.current = { key: connectionKey, atMs: Date.now() }
+        if (autoConnectInFlightRef.current?.promise === runPromise) {
+          autoConnectInFlightRef.current = null
+        }
+      }
+    }
+  }, [atlsProxyUrl, providerApiBase, addAtlsLog])
+
+  useEffect(() => {
+    return scheduleAtlsAutoConnect(() => {
+      void connectAtls()
+    })
+  }, [connectAtls])
+
+  const AtlsProofContent = ({
     variant,
-    verificationState,
-    runtimeSignals,
     onViewDetails,
   }: {
     variant: "sidebar" | "dialog"
-    verificationState: VerificationState
-    runtimeSignals: RuntimeSignal[]
     onViewDetails?: () => void
   }) => {
     const isCompact = variant === "sidebar"
     const badgeBase =
       "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.24em]"
-    const runtimePreview = runtimeSignals.slice(0, 4)
-    const runtimeOverflow = runtimeSignals.length - runtimePreview.length
 
-    const activeSourceBaseUrl =
-      proofState.status === "ready" || proofState.status === "loading" || proofState.status === "error"
-        ? proofState.sourceBaseUrl
-        : derivedAttestationOrigin
-
-    const hostLabel = getHostLabelFromUrl(activeSourceBaseUrl) ?? "Umbra CVM attestation endpoint"
-
-    const baseConnectionCopy = activeSourceBaseUrl
-      ? `Intel TDX quote fetched from ${hostLabel}.`
-      : "Connect to your Umbra CVM origin to fetch attestation quotes."
-    const connectionCopy = baseConnectionCopy
-
-    const refreshDisabled =
-      proofState.status === "loading" || !derivedAttestationOrigin || verificationState.status === "running"
+    const targetHost = providerApiBase ? deriveTargetHost(providerApiBase) : null
+    const connectionCopy = targetHost
+      ? `Secure connection to ${targetHost}.`
+      : "Configure a provider URL to establish secure connection."
 
     const statusBadge = (() => {
-      switch (proofState.status) {
-        case "ready":
+      switch (atlsState.status) {
+        case "connected":
           return (
             <div className={cn(badgeBase, "border-[#1BAF9F]/60 bg-[#1BAF9F]/10 text-[#037C6A]")}>
-              <CheckCircle2 className="h-3.5 w-3.5" /> Fetched
+              <CheckCircle2 className="h-3.5 w-3.5" /> Connected
             </div>
           )
-        case "loading":
+        case "connecting":
           return (
             <div className={cn(badgeBase, "border-brand-primary/40 bg-brand-primary/10 text-brand-primary")}>
-              <Sparkles className="h-3.5 w-3.5" /> Fetching
+              <Sparkles className="h-3.5 w-3.5" /> Connecting{atlsState.attempt && atlsState.attempt > 1 ? ` (${atlsState.attempt}/${atlsState.maxAttempts})` : ""}
             </div>
           )
         case "error":
           return (
-            <div className={cn(badgeBase, "border-rose-400/60 bg-rose-400/10 text-rose-600")}> 
+            <div className={cn(badgeBase, "border-rose-400/60 bg-rose-400/10 text-rose-600")}>
               <X className="h-3.5 w-3.5" /> Error
             </div>
-          )
-        case "unavailable":
-          return (
-            <div className={cn(badgeBase, "border-border/70 bg-transparent text-muted-foreground")}>Config</div>
           )
         default:
           return (
@@ -985,33 +786,35 @@ function ConfidentialAIContent() {
     })()
 
     type ChecklistState = "pending" | "running" | "ok" | "error"
-    const quoteState: ChecklistState =
-      proofState.status === "loading"
+    const connectionState: ChecklistState =
+      atlsState.status === "connecting"
         ? "running"
-        : proofState.status === "ready"
+        : atlsState.status === "connected"
           ? "ok"
-          : proofState.status === "error"
+          : atlsState.status === "error"
             ? "error"
             : "pending"
-    const machineSecureState: ChecklistState =
-      proofState.status === "loading"
+    const attestationState: ChecklistState =
+      atlsState.status === "connecting"
         ? "running"
-        : proofState.status === "ready" && verificationState.status === "success" && verificationState.quoteVerified && verificationState.reportDataMatches === true
+        : atlsState.status === "connected" && atlsState.attestation.trusted
           ? "ok"
-          : proofState.status === "error" || verificationState.status === "error"
+          : atlsState.status === "error"
             ? "error"
             : "pending"
 
     const checklistItems: Array<{ label: string; description: string; state: ChecklistState }> = [
       {
-        label: "Quote fetched",
+        label: "Server identity confirmed",
         description: connectionCopy,
-        state: quoteState,
+        state: connectionState,
       },
       {
-        label: "Machine is secure",
-        description: "Attestation verified and secure",
-        state: machineSecureState,
+        label: "Hardware protection active",
+        description: atlsState.status === "connected"
+          ? `${atlsState.attestation.teeType} - ${atlsState.attestation.tcbStatus}`
+          : "Verifying secure environment...",
+        state: attestationState,
       },
     ]
 
@@ -1029,81 +832,35 @@ function ConfidentialAIContent() {
     }
 
     const body = (() => {
-      switch (proofState.status) {
-        case "ready": {
-          const isVerified =
-            verificationState.status === "success" &&
-            verificationState.quoteVerified &&
-            verificationState.reportDataMatches === true
+      switch (atlsState.status) {
+        case "connected": {
+          const isVerified = atlsState.attestation.trusted
           return (
             <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
               <div
                 className={cn(
                   "flex items-center gap-2 rounded-2xl border px-3 py-2.5 shadow-sm",
-                  isVerified && !verificationState.isOutOfDate
+                  isVerified
                     ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-600 dark:border-emerald-400/40 dark:bg-emerald-400/5"
-                    : verificationState.status === "success" && verificationState.isOutOfDate
-                      ? "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                      : verificationState.status === "success"
-                        ? "border-rose-400/60 bg-rose-400/10 text-rose-600 dark:border-rose-400/40 dark:bg-rose-400/5"
-                        : verificationState.status === "running"
-                          ? "border-brand-primary/60 bg-brand-primary/10 text-brand-primary dark:border-brand-primary/40 dark:bg-brand-primary/5"
-                          : "border-border/40 bg-card/70 text-muted-foreground dark:border-border/60 dark:bg-card/10"
+                    : "border-rose-400/60 bg-rose-400/10 text-rose-600 dark:border-rose-400/40 dark:bg-rose-400/5"
                 )}
               >
-                {onViewDetails && (
-                  <button
-                    type="button"
-                    onClick={onViewDetails}
-                    className="absolute -top-2 -right-2 h-6 w-6 rounded-full border border-border/40 bg-card/80 text-muted-foreground hover:bg-card/90 hover:text-foreground shadow-sm dark:border-border/60 dark:bg-card/40 dark:hover:bg-card/50 flex items-center justify-center transition z-10"
-                    title="View details"
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                {verificationState.status === "idle" && (
+                {isVerified ? (
                   <>
-                    <Info className="h-4 w-4" />
-                    <span className="text-xs">Verification pending</span>
+                    <Lock className="h-4 w-4" />
+                    <span className="text-xs font-medium">Protected and verified</span>
                   </>
-                )}
-                {verificationState.status === "running" && (
-                  <>
-                    <Sparkles className="h-4 w-4 animate-pulse" />
-                    <span className="text-xs">Verifying attestation…</span>
-                  </>
-                )}
-                {verificationState.status === "error" && (
+                ) : (
                   <>
                     <X className="h-4 w-4" />
-                    <span className="text-xs truncate" title={verificationState.error}>{verificationState.error}</span>
-                  </>
-                )}
-                {verificationState.status === "success" && (
-                  <>
-                    {isVerified && !verificationState.isOutOfDate ? (
-                      <>
-                        <Lock className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verified and secure</span>
-                      </>
-                    ) : isVerified && verificationState.isOutOfDate ? (
-                      <>
-                        <AlertTriangle className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verified (update recommended)</span>
-                      </>
-                    ) : (
-                      <>
-                        <X className="h-4 w-4" />
-                        <span className="text-xs font-medium">Verification failed</span>
-                      </>
-                    )}
+                    <span className="text-xs font-medium">Security check failed</span>
                   </>
                 )}
               </div>
             </div>
           )
         }
-        case "loading": {
+        case "connecting":
           return (
             <div
               className={cn(
@@ -1111,37 +868,23 @@ function ConfidentialAIContent() {
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
-              Requesting quote for
-              <span className="ml-1 font-mono text-foreground">
-                {formatReportDataPreview(proofState.reportData)}
-              </span>
-              …
+              <Sparkles className="h-4 w-4 inline-block mr-2 animate-pulse" />
+              Verifying server security...{atlsState.attempt && atlsState.attempt > 1 ? ` (attempt ${atlsState.attempt}/${atlsState.maxAttempts})` : ""}
             </div>
           )
-        }
         case "error":
           return (
-            <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}> 
-              <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
-                {proofState.error}
+            <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
+              <div className="border-l-2 border-rose-400 pl-3 text-rose-700 dark:text-rose-300">
+                <div className="font-medium">{atlsState.error}</div>
+                {atlsState.hint && (
+                  <div className="mt-1 text-muted-foreground text-[11px]">
+                    {atlsState.hint}
+                  </div>
+                )}
               </div>
-              <p className="text-muted-foreground">
-                Challenge: <span className="font-mono text-foreground">{formatReportDataPreview(proofState.reportData)}</span>
-              </p>
             </div>
           )
-        case "unavailable":
-          return (
-            <div
-              className={cn(
-                "rounded-2xl border border-border/40 bg-card/60 px-3 py-2 text-muted-foreground dark:border-border/60 dark:bg-card/10",
-                isCompact ? "text-xs" : "text-sm"
-              )}
-            >
-              {proofState.reason ?? "Configure NEXT_PUBLIC_ATTESTATION_BASE_URL to enable live quotes."}
-            </div>
-          )
-        case "idle":
         default:
           return (
             <div
@@ -1150,7 +893,7 @@ function ConfidentialAIContent() {
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
-              Preparing attestation challenge…
+              Waiting for provider configuration…
             </div>
           )
       }
@@ -1161,11 +904,12 @@ function ConfidentialAIContent() {
         <div className="space-y-2">
           <div className={cn("flex items-start justify-between gap-3", !isCompact && "gap-4")}>
             <div className="flex items-start gap-3">
-              <div className={cn("rounded-full border border-brand-primary/40 bg-brand-primary/10 text-brand-primary", isCompact ? "p-2" : "p-3")}> 
-                <Cpu className={cn("text-brand-primary", isCompact ? "h-4 w-4" : "h-5 w-5")} />
+              <div className={cn("rounded-full border border-brand-primary/40 bg-brand-primary/10 text-brand-primary", isCompact ? "p-2" : "p-3")}>
+                <ShieldCheck className={cn("text-brand-primary", isCompact ? "h-4 w-4" : "h-5 w-5")} />
               </div>
               <div className="space-y-1">
-                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>Intel TDX Quote</p>
+                <p className={cn("font-semibold text-foreground", isCompact ? "text-sm" : "text-base")}>Security Proof</p>
+                <p className={cn("text-muted-foreground", isCompact ? "text-[10px]" : "text-xs")}>Hardware-verified protection</p>
               </div>
             </div>
             {statusBadge}
@@ -1174,7 +918,7 @@ function ConfidentialAIContent() {
         </div>
         <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/15">
           <p className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground/80 mb-2">
-            Attestation checklist
+            Security checklist
           </p>
           <div className="space-y-2">
             {checklistItems.map((item) => (
@@ -1192,27 +936,42 @@ function ConfidentialAIContent() {
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="secondary"
+            variant="outline"
             size={isCompact ? "sm" : "default"}
-            onClick={handleProofRefresh}
-            disabled={refreshDisabled}
-            className="rounded-full"
+            onClick={() => void connectAtls({ force: true })}
+            disabled={atlsState.status === "connecting" || !providerApiBase}
+            className={cn(
+              proofActionButtonClass,
+              isCompact ? "text-xs" : "text-sm"
+            )}
           >
-            {verificationState.status === "running" ? "Refreshing…" : "Refresh & verify"}
+            {atlsState.status === "connecting" ? "Connecting..." : "Reconnect"}
           </Button>
+          {onViewDetails && atlsState.status === "connected" && (
+            <Button
+              type="button"
+              variant="outline"
+              size={isCompact ? "sm" : "default"}
+              onClick={onViewDetails}
+              className={cn(
+                proofActionButtonClass,
+                isCompact ? "text-xs" : "text-sm"
+              )}
+            >
+              View Details
+            </Button>
+          )}
         </div>
       </div>
     )
   }
 
-  const ProofDetailsModal = () => {
-    if (proofState.status !== "ready") return null
+  const AtlsDetailsModal = () => {
+    if (atlsState.status !== "connected") return null
 
-    const issuedAt = formatTimestampLabel(proofState.payload.timestamp)
-    const refreshedAt = formatLocalTime(proofState.fetchedAt)
-    const quotePreview = summarizeQuote(proofState.payload.quote)
-    const activeSourceBaseUrl = proofState.sourceBaseUrl ?? derivedAttestationOrigin
-    const hostLabel = getHostLabelFromUrl(activeSourceBaseUrl) ?? "Umbra CVM attestation endpoint"
+    const targetHost = providerApiBase ? deriveTargetHost(providerApiBase) : "Unknown"
+    const policy = getPolicy()
+    const services = parseAppComposeServices(policy)
 
     return (
       <Dialog open={proofDetailsModalOpen} onOpenChange={setProofDetailsModalOpen}>
@@ -1220,245 +979,217 @@ function ConfidentialAIContent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <ShieldCheck className="h-5 w-5 text-brand-primary" />
-              Proof of Confidentiality Details
+              Security Details
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Verification Status - moved to top */}
+            <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/10">
+              <div className="flex items-center gap-2">
+                {atlsState.attestation.trusted ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-600">
+                      Connection attested and verified
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <X className="h-4 w-4 text-rose-600" />
+                    <span className="text-sm font-medium text-rose-600">
+                      Security verification failed
+                    </span>
+                  </>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                The connection to <span className="font-mono">{targetHost}</span> has been attested and verified
+                using Attested TLS. The server&apos;s certificate is cryptographically bound to the
+                hardware measurements below, proving the exact code running in the secure enclave.
+              </p>
+            </div>
+
+            {/* TEE Information */}
             <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Attestation Information</h3>
+              <h3 className="text-sm font-semibold text-foreground">TEE Information</h3>
               <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
                 <dl className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Challenge</dt>
-                    <dd className="font-mono text-[#102A8C]">{formatReportDataPreview(proofState.reportData)}</dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">TEE</dt>
+                    <dt className="text-muted-foreground">TEE Type</dt>
                     <dd className="font-mono text-foreground/80 uppercase">
-                      {proofState.attestation?.teeType || proofState.payload.quote_type || "tdx"}
+                      {atlsState.attestation.teeType}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">TCB status</dt>
+                    <dt className="text-muted-foreground">TCB Status</dt>
                     <dd className="font-mono text-foreground/80">
-                      {proofState.attestation?.tcbStatus || "Unknown"}
+                      {atlsState.attestation.tcbStatus}
                     </dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Measurement</dt>
-                    <dd className="font-mono text-brand-primary">
-                      {formatIdentifierSnippet(proofState.attestation?.measurement ?? "—")}
-                    </dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Advisories</dt>
-                    <dd className="font-mono text-foreground/80">{proofState.attestation?.advisoryIds?.length ?? 0}</dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Last refreshed</dt>
-                    <dd className="font-mono text-foreground/80">{refreshedAt}</dd>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <dt className="text-muted-foreground">Machine endpoint</dt>
-                    <dd className="font-mono text-foreground/80">{hostLabel}</dd>
                   </div>
                 </dl>
               </div>
             </div>
 
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="technical-details" className="border-none">
-                <AccordionTrigger className="text-sm font-semibold text-foreground py-2 hover:no-underline">
-                  Technical Details
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="rounded-2xl border border-border/40 bg-background/70 p-3 font-mono text-[11px] leading-relaxed text-foreground/90 shadow-inner dark:border-border/60 dark:bg-background/30 max-h-[200px] overflow-y-auto">
-                    <p className="text-[10px] uppercase tracking-[0.28em] text-muted-foreground/70 mb-2">Quote excerpt</p>
-                    <p className="break-all">{quotePreview}</p>
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-
-            {runtimeSignals.length > 0 && (
+            {/* VM & OS Measurements */}
+            {(policy.os_image_hash || policy.expected_bootchain) && (
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">Runtime Attestations</h3>
-                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/15 max-h-[300px] overflow-y-auto">
-                  <div className="space-y-2">
-                    {runtimeSignals.map((signal) => (
-                      <div key={signal.label} className="flex items-start justify-between gap-3">
-                        <div className="space-y-0.5">
-                          <p className="text-xs font-medium text-foreground">{signal.label}</p>
-                          {signal.description && (
-                            <p className="text-[11px] text-muted-foreground">{signal.description}</p>
-                          )}
-                        </div>
-                        <span className="font-mono text-[11px] text-[#102A8C]">{signal.value}</span>
+                <h3 className="text-sm font-semibold text-foreground">VM & OS Measurements</h3>
+                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
+                  <dl className="space-y-3 text-sm">
+                    {policy.os_image_hash && (
+                      <div>
+                        <dt className="text-muted-foreground text-xs mb-1">OS Image Hash</dt>
+                        <dd>
+                          <code className="block text-[10px] text-foreground/80 font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {policy.os_image_hash}
+                          </code>
+                        </dd>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                    {policy.expected_bootchain?.mrtd && (
+                      <div>
+                        <dt className="text-muted-foreground text-xs mb-1">MRTD (Initial TD Measurement)</dt>
+                        <dd>
+                          <code className="block text-[10px] text-foreground/80 font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {policy.expected_bootchain.mrtd}
+                          </code>
+                        </dd>
+                      </div>
+                    )}
+                    {policy.expected_bootchain?.rtmr0 && (
+                      <div>
+                        <dt className="text-muted-foreground text-xs mb-1">RTMR0 (Firmware Measurement)</dt>
+                        <dd>
+                          <code className="block text-[10px] text-foreground/80 font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {policy.expected_bootchain.rtmr0}
+                          </code>
+                        </dd>
+                      </div>
+                    )}
+                    {policy.expected_bootchain?.rtmr1 && (
+                      <div>
+                        <dt className="text-muted-foreground text-xs mb-1">RTMR1 (OS Measurement)</dt>
+                        <dd>
+                          <code className="block text-[10px] text-foreground/80 font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {policy.expected_bootchain.rtmr1}
+                          </code>
+                        </dd>
+                      </div>
+                    )}
+                    {policy.expected_bootchain?.rtmr2 && (
+                      <div>
+                        <dt className="text-muted-foreground text-xs mb-1">RTMR2 (Application Measurement)</dt>
+                        <dd>
+                          <code className="block text-[10px] text-foreground/80 font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {policy.expected_bootchain.rtmr2}
+                          </code>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
                 </div>
               </div>
             )}
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground">Verification Status</h3>
-              <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/10">
-                {verificationState.status === "idle" && (
-                  <p className="text-xs text-muted-foreground">Verification not yet performed.</p>
-                )}
-                {verificationState.status === "running" && (
-                  <p className="text-xs text-muted-foreground">Verifying machine attestation…</p>
-                )}
-                {verificationState.status === "error" && (
-                  <p className="text-xs text-rose-600">{verificationState.error}</p>
-                )}
-                {verificationState.status === "success" && (
-                  <div className="space-y-2 text-xs">
-                    <p
-                      className={cn(
-                        "flex items-center gap-2",
-                        verificationState.quoteVerified && verificationState.reportDataMatches === true
-                          ? "text-emerald-600"
-                          : "text-rose-600"
-                      )}
-                    >
-                      {verificationState.quoteVerified && verificationState.reportDataMatches === true ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      ) : (
-                        <X className="h-3.5 w-3.5" />
-                      )}
-                      <span className="font-medium">
-                        Status:{" "}
-                        {verificationState.quoteVerified && verificationState.reportDataMatches === true ? "Verified and secure" : "Verification failed"}
-                      </span>
-                    </p>
-                    {verificationState.statusText && (
-                      <p className="text-xs text-muted-foreground">
-                        Security status: <span className={cn("font-semibold", verificationState.isOutOfDate ? "text-amber-600" : "text-foreground")}>{verificationState.statusText === "OutOfDate" ? "Update recommended" : verificationState.statusText}</span>
-                      </p>
-                    )}
-                    {verificationState.isOutOfDate && (
-                      <div className="rounded-lg border border-amber-400/60 bg-amber-400/10 p-2.5 space-y-1.5 dark:border-amber-400/40 dark:bg-amber-400/5">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5 dark:text-amber-400" />
-                          <div className="flex-1 space-y-1">
-                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Security update recommended</p>
-                            <p className="text-[11px] text-amber-600 dark:text-amber-400 leading-relaxed">
-                              The service is working normally, but the provider should apply security updates.
-                            </p>
+            {/* Verified Container Images */}
+            {services.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-semibold text-foreground">Verified Container Images</h3>
+                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
+                  <ul className="space-y-4">
+                    {services.map((service) => {
+                      const imageUrl = getImageUrl(service.image, service.digest)
+                      return (
+                        <li key={service.name} className="text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-foreground">{service.name}</span>
+                            {imageUrl && (
+                              <a
+                                href={imageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-brand-primary hover:underline"
+                              >
+                                {service.image.startsWith("ghcr.io") ? "GHCR" : "Docker Hub"}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
                           </div>
-                        </div>
-                      </div>
-                    )}
-                    {verificationState.testMode && (
-                      <p className="text-xs text-amber-600">Test mode enabled — verification simulated for automated checks.</p>
-                    )}
-                    {verificationState.reportDataMatches !== null && (
-                      <p className={cn("text-xs", verificationState.reportDataMatches ? "text-emerald-600" : "text-rose-600")}>
-                        Challenge Verification: {verificationState.reportDataMatches ? "matches" : "mismatch"}
-                      </p>
-                    )}
-                    {verificationState.advisoryIds && verificationState.advisoryIds.length > 0 && (
-                      <div className="pt-2 border-t border-border/40 dark:border-border/60 space-y-1">
-                        <p className="text-xs text-muted-foreground">Security Advisories:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {verificationState.advisoryIds.map((advisory) => (
-                            <span
-                              key={advisory}
-                              className="rounded-full border border-border/50 px-2 py-0.5 text-[10px] text-muted-foreground"
-                            >
-                              {advisory}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                          <code className="mt-1.5 block text-[10px] text-muted-foreground font-mono break-all select-all bg-muted/50 px-2 py-1 rounded">
+                            {service.image}
+                          </code>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
               </div>
-            </div>
+            )}
 
-            {verificationState.status === "success" && verificationState.checksum && (
+            {/* Attestation Logs Console */}
+            {atlsLogs.length > 0 && (
               <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="advanced-details" className="border-none">
-                  <AccordionTrigger className="text-sm font-semibold text-foreground py-2 hover:no-underline">
-                    Advanced Details
+                <AccordionItem value="logs" className="border-none">
+                  <AccordionTrigger className="py-2 hover:no-underline">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Terminal className="h-4 w-4" />
+                      Attestation Log
+                      <span className="text-xs font-normal text-muted-foreground">
+                        ({atlsLogs.length} entries)
+                      </span>
+                    </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/10 space-y-3">
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-muted-foreground">SHA-256 checksum:</span>
-                          <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
-                            <code className="font-mono text-[10px] text-brand-primary break-all text-right truncate max-w-[200px]" title={verificationState.checksum}>
-                              {verificationState.checksum}
-                            </code>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                const checksumToCopy = verificationState.checksum!
-                                console.log("[Checksum] Copying checksum from modal:", checksumToCopy, "Length:", checksumToCopy.length)
-                                navigator.clipboard.writeText(checksumToCopy).then(() => {
-                                  console.log("[Checksum] Successfully copied to clipboard")
-                                }).catch((err) => {
-                                  console.error("[Checksum] Failed to copy:", err)
-                                })
-                              }}
-                              className="h-5 w-5 p-0 shrink-0"
-                              title="Copy checksum (without 0x prefix)"
-                            >
-                              <Save className="h-3 w-3" />
-                            </Button>
+                    <div className="rounded-lg border border-border/40 bg-zinc-950 dark:bg-zinc-900 overflow-hidden">
+                      <div className="max-h-[200px] overflow-y-auto p-3 font-mono text-xs">
+                        {atlsLogs.map((log, index) => (
+                          <div key={index} className="flex gap-2 py-0.5">
+                            <span className="text-zinc-500 shrink-0">
+                              {log.timestamp.toLocaleTimeString("en-US", {
+                                hour12: false,
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                fractionalSecondDigits: 3,
+                              })}
+                            </span>
+                            <span className={cn(
+                              log.level === "error" && "text-red-400",
+                              log.level === "warn" && "text-yellow-400",
+                              log.level === "success" && "text-emerald-400",
+                              log.level === "info" && "text-zinc-300",
+                            )}>
+                              {log.message}
+                            </span>
                           </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              const quoteHex = verificationState.quoteHex || ""
-                              console.log("[Quote] Copying raw quote hex, length:", quoteHex.length)
-                              navigator.clipboard.writeText(quoteHex).then(() => {
-                                console.log("[Quote] Successfully copied quote hex to clipboard")
-                                alert("Quote hex copied! Paste it into the TEE Attestation Explorer.")
-                              }).catch((err) => {
-                                console.error("[Quote] Failed to copy:", err)
-                              })
-                            }}
-                            className="w-full rounded-full text-xs"
-                            disabled={!verificationState.quoteHex}
-                          >
-                            <Save className="h-3 w-3 mr-2" />
-                            Copy raw quote hex (for TEE Explorer)
-                          </Button>
-                          {verificationState.checksum && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const checksumForUrl = verificationState.checksum || ""
-                                console.log("[Checksum] Opening TEE Explorer with checksum:", checksumForUrl, "Length:", checksumForUrl.length)
-                                console.log("[Checksum] Full URL:", `https://proof.t16z.com/reports/${checksumForUrl}`)
-                                window.open(`https://proof.t16z.com/reports/${checksumForUrl}`, '_blank')
-                              }}
-                              className="w-full rounded-full text-xs"
-                            >
-                              <Globe className="h-3 w-3 mr-2" />
-                              View on TEE Attestation Explorer (if already uploaded)
-                            </Button>
-                          )}
-                        </div>
+                        ))}
                       </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
             )}
+
+            <div className="flex flex-wrap gap-3 pt-2 border-t border-border/40">
+              <a
+                href={GITHUB_REPO_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-brand-primary hover:underline"
+              >
+                View Source on GitHub
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <a
+                href={DOCKER_COMPOSE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-brand-primary hover:underline"
+              >
+                View docker-compose.yml
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -1473,22 +1204,25 @@ function ConfidentialAIContent() {
     const files = event.target.files
     if (!files) return
 
+    setComposerNotice(null)
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
 
       // Check file size (limit to 100MB for all files)
-      const maxSize = 100 * 1024 * 1024 
+      const maxSize = 100 * 1024 * 1024
       if (file.size > maxSize) {
-        const maxSizeText = '100MB'
-        alert(`File "${file.name}" is too large. Maximum size is ${maxSizeText}.`)
+        setComposerNotice({
+          type: "error",
+          message: `File "${file.name}" is too large. Maximum size is 100MB.`,
+        })
         continue
       }
 
       try {
         let content: string
 
-        if (file.type === 'application/pdf') {
-          // ici
+        if (file.type === "application/pdf") {
           content = await extractTextFromPDF(file)
         } else {
           content = await file.text()
@@ -1498,24 +1232,27 @@ function ConfidentialAIContent() {
           name: file.name,
           content,
           size: file.size,
-          type: file.type || 'text/plain'
+          type: file.type || "text/plain",
         }
 
-        setUploadedFiles(prev => [...prev, uploadedFile])
+        setUploadedFiles((prev) => [...prev, uploadedFile])
       } catch (error) {
-        console.error('Error reading file:', error)
-        alert(`Failed to read file "${file.name}": ${error instanceof Error ? error.message : 'Unknown error'}`)
+        console.error("Error reading file:", error)
+        setComposerNotice({
+          type: "error",
+          message: `Failed to read file "${file.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+        })
       }
     }
 
     // Reset the input
     if (fileInputRef.current) {
-      fileInputRef.current.value = ''
+      fileInputRef.current.value = ""
     }
   }
 
   const removeFile = (index: number) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
+    setUploadedFiles((prev) => prev.filter((_, i) => i !== index))
   }
 
   const formatFileSize = (bytes: number) => {
@@ -1534,7 +1271,7 @@ function ConfidentialAIContent() {
     return count === 1 ? '1 word' : `${count} words`
   }
   // Extract only text
-  const extractTextFromPDF = async (file: File): Promise<string> => {
+  const extractTextFromPDF = useCallback(async (file: File): Promise<string> => {
     try {
       const pdfModuleUrl = `${window.location.origin}/pdfjs/pdf.mjs`
       const pdfWorkerUrl = `${window.location.origin}/pdfjs/pdf.worker.mjs`
@@ -1557,10 +1294,198 @@ function ConfidentialAIContent() {
       }
       return text.trim()
     } catch (error) {
-      console.error('Error extracting text from PDF:', error)
-      throw new Error('Failed to extract text from PDF')
+      throw new Error(
+        `Failed to extract text from PDF: ${error instanceof Error ? error.message : "Unknown PDF parse error"}`
+      )
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const textDecoder = new TextDecoder()
+
+    const decodeBase64 = (value: string) => {
+      const normalized = value.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/")
+      const binary = window.atob(normalized)
+      const bytes = new Uint8Array(binary.length)
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index)
+      }
+      return bytes
+    }
+
+    const isPdfBytes = (bytes: Uint8Array) =>
+      bytes.length >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d
+
+    const isGitLfsPointer = (text: string) =>
+      text.startsWith("version https://git-lfs.github.com/spec/v1") && text.includes("\noid sha256:")
+
+    const loadDemoHandoff = async () => {
+      const raw = window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)
+      if (!raw) return
+      const payload = parseDemoHandoffPayload(raw)
+      if (!payload) {
+        window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        return
+      }
+
+      const example = EXAMPLE_THEMES[payload.exampleId]
+      if (!example) return
+
+      if (cancelled) return
+      setInput(example.prompt)
+      setUploadedFiles([])
+
+      try {
+        const response = await fetch(`/api/example-docs/${encodeURIComponent(payload.exampleId)}`)
+        if (!response.ok) {
+          if (cancelled) return
+          setComposerNotice({
+            type: "error",
+            message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+          })
+          if (payload.autoSend) {
+            setPendingDemoSend({
+              text: example.prompt,
+              files: [],
+            })
+          }
+          return
+        }
+
+        const docs = (await response.json()) as DemoDocsResponse
+        const files = Array.isArray(docs.files) ? docs.files : []
+        const failedFiles: string[] = []
+        const preloadedFiles: UploadedFile[] = []
+
+        for (const filePayload of files) {
+          try {
+            const bytes = decodeBase64(filePayload.data)
+            const fileType = filePayload.type || "application/pdf"
+            let content: string
+            let normalizedType = fileType
+
+            if (fileType === "application/pdf" && !isPdfBytes(bytes)) {
+              const decodedText = textDecoder.decode(bytes)
+              if (isGitLfsPointer(decodedText)) {
+                failedFiles.push(`${filePayload.name} (missing Git LFS asset)`)
+                continue
+              }
+              normalizedType = "text/plain"
+              content = decodedText
+            } else {
+              const file = new File([bytes], filePayload.name, { type: fileType })
+              content =
+                fileType === "application/pdf"
+                  ? await extractTextFromPDF(file)
+                  : await file.text()
+            }
+
+            preloadedFiles.push({
+              name: filePayload.name,
+              type: normalizedType,
+              size: bytes.byteLength,
+              content,
+            })
+          } catch {
+            failedFiles.push(filePayload.name)
+          }
+        }
+
+        if (cancelled) return
+
+        setUploadedFiles(preloadedFiles)
+        setInput(example.prompt)
+
+        if (failedFiles.length > 0) {
+          setComposerNotice({
+            type: "error",
+            message: `Some demo files could not be processed: ${failedFiles.join(", ")}`,
+          })
+        } else {
+          setComposerNotice(null)
+        }
+
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: preloadedFiles,
+          })
+        }
+      } catch (error) {
+        console.error("Failed to load demo files", error)
+        if (cancelled) return
+        setComposerNotice({
+          type: "error",
+          message: "Demo files could not be loaded. You can still send the demo prompt manually.",
+        })
+        if (payload.autoSend) {
+          setPendingDemoSend({
+            text: example.prompt,
+            files: [],
+          })
+        }
+      } finally {
+        if (!cancelled) {
+          window.sessionStorage.removeItem(DEMO_HANDOFF_STORAGE_KEY)
+        }
+      }
+    }
+
+    void loadDemoHandoff()
+
+    return () => {
+      cancelled = true
+    }
+  }, [extractTextFromPDF])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      if (cancelled) return
+      if (window.sessionStorage.getItem(DEMO_HANDOFF_STORAGE_KEY)) return
+
+      const rawMessage = window.sessionStorage.getItem(LANDING_MESSAGE_STORAGE_KEY)
+      const rawFiles = window.sessionStorage.getItem(LANDING_FILES_STORAGE_KEY)
+      const restoredFiles = parseLandingUploadedFiles(rawFiles)
+      const restoredMessage = (rawMessage ?? "").trim()
+      const hasMessage = restoredMessage.length > 0
+      const hasFiles = restoredFiles.length > 0
+
+      if (!hasMessage && !hasFiles) {
+        if (rawMessage !== null || rawFiles !== null) {
+          window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+          window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+        }
+        return
+      }
+
+      setInput(restoredMessage)
+      setUploadedFiles(restoredFiles)
+      setPendingDemoSend({
+        text: restoredMessage,
+        files: restoredFiles,
+      })
+      setComposerNotice(null)
+
+      window.sessionStorage.removeItem(LANDING_MESSAGE_STORAGE_KEY)
+      window.sessionStorage.removeItem(LANDING_FILES_STORAGE_KEY)
+    }, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [])
 
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
@@ -1605,27 +1530,33 @@ function ConfidentialAIContent() {
   )
 
   const handleStartNewConversation = useCallback(() => {
-    if (hasConversationHistory && typeof window !== "undefined") {
-      const confirmed = window.confirm(
-        "Starting a new conversation will clear the current transcript. Conversations aren't saved automatically. Continue?"
-      )
-      if (!confirmed) {
-        return
+    if (hasConversationHistory && !confirmNewConversation) {
+      setConfirmNewConversation(true)
+      setComposerNotice({ type: "info", message: "Press New again within 5 seconds to clear this transcript." })
+      if (newConversationTimeoutRef.current !== null) {
+        window.clearTimeout(newConversationTimeoutRef.current)
       }
+      newConversationTimeoutRef.current = window.setTimeout(() => {
+        setConfirmNewConversation(false)
+      }, 5000)
+      return
     }
+
+    if (newConversationTimeoutRef.current !== null) {
+      window.clearTimeout(newConversationTimeoutRef.current)
+      newConversationTimeoutRef.current = null
+    }
+    setConfirmNewConversation(false)
+    setComposerNotice(null)
 
     const greeting = buildGreeting(providerModel, assistantName, providerHost)
     setMessages([{ role: "assistant", content: greeting }])
     setReasoningOpen({})
     setInput("")
     setUploadedFiles([])
-    setCipherPreview(null)
-    setEncrypting(false)
     setIsSending(false)
-    heroSubmissionRef.current = null
-    heroAutoSubmitAttemptedRef.current = false
     scrollToBottom("auto")
-  }, [assistantName, hasConversationHistory, providerHost, providerModel, scrollToBottom])
+  }, [assistantName, confirmNewConversation, hasConversationHistory, providerHost, providerModel, scrollToBottom])
 
   const handleSaveConversation = useCallback(() => {
     if (messages.length === 0 || typeof window === "undefined") return
@@ -1634,6 +1565,7 @@ function ConfidentialAIContent() {
     const exportPayload = {
       exportedAt,
       assistant: assistantName,
+      attachmentContentsIncluded: false,
       provider: {
         model: providerModel ?? null,
         baseUrl: providerApiBase ?? null,
@@ -1643,11 +1575,10 @@ function ConfidentialAIContent() {
         role,
         content,
         attachments:
-          attachments?.map(({ name, type, size, content }) => ({
+          attachments?.map(({ name, type, size }) => ({
             name,
             type,
             size,
-            content,
           })) ?? undefined,
         reasoning_content,
         finishReason,
@@ -1685,9 +1616,19 @@ function ConfidentialAIContent() {
     scrollToBottom("smooth")
   }, [reasoningOpen, scrollToBottom])
 
-  const sendMessage = async (override?: { text: string; files: UploadedFile[] }) => {
+  useEffect(() => {
+    return () => {
+      if (newConversationTimeoutRef.current !== null) {
+        window.clearTimeout(newConversationTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const sendMessage = async (override?: SendMessageOverride) => {
     if (isSending) return
+    setComposerNotice(null)
     if (!secureChannelReady) {
+      setComposerNotice({ type: "info", message: "Wait for secure session verification before sending." })
       return
     }
     if (guestRestrictionActive) {
@@ -1701,11 +1642,8 @@ function ConfidentialAIContent() {
 
     if (!providerApiBase) {
       setConfigError("Add a confidential provider base URL before starting a session.")
-      return
-    }
-
-    if (!providerModel) {
-      setConfigError("Set NEXT_PUBLIC_VLLM_MODEL in your environment before starting a session.")
+      setComposerNotice({ type: "error", message: "Session setup is incomplete. Add your provider URL first." })
+      setSessionDialogOpen(true)
       return
     }
 
@@ -1749,13 +1687,12 @@ function ConfidentialAIContent() {
     const conversationWithAssistant: Message[] = [...conversationBeforeAssistant, assistantPlaceholder]
     const assistantIndex = conversationWithAssistant.length - 1
 
-    setEncrypting(true)
-    setCipherPreview(toHexPreview(messageContent))
     setMessages(conversationWithAssistant)
     setReasoningOpen((prev) => ({ ...prev, [assistantIndex]: false }))
     setInput("")
     setUploadedFiles([])
     setIsSending(true)
+    setConfirmNewConversation(false)
 
     scrollToBottom("smooth")
 
@@ -1773,6 +1710,9 @@ function ConfidentialAIContent() {
     }
 
     try {
+      if (!atlasFetchRef.current) {
+        throw new Error("aTLS connection not established. Cannot connect to model securely.")
+      }
       let streamedContent = ""
       let streamedReasoning = ""
       let finishReason: string | undefined
@@ -1789,6 +1729,7 @@ function ConfidentialAIContent() {
             baseUrl: providerApiBase,
             apiKey: trimmedToken || undefined,
           },
+          fetchImpl: atlasFetchRef.current,
         }
       )) {
         if (chunk.type === "delta" && chunk.content) {
@@ -1842,61 +1783,54 @@ function ConfidentialAIContent() {
       handleStreamingFollow("smooth")
     } finally {
       setIsSending(false)
-      setEncrypting(false)
-      setCipherPreview(null)
     }
   }
 
   sendMessageRef.current = sendMessage
 
   useEffect(() => {
-    if (heroAutoSubmitAttemptedRef.current) {
+    if (!pendingDemoSend) return
+
+    const readiness = {
+      pendingDemoSend: true,
+      secureChannelReady,
+      providerConfigured: Boolean(providerApiBase),
+      guestRestricted: guestRestrictionActive,
+      isSending,
+    }
+
+    if (guestRestrictionActive) {
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Sign in to send this request securely.",
+        }
+      )
       return
     }
+
     if (!providerApiBase) {
-      return
-    }
-    if (!secureChannelReady) {
-      return
-    }
-    const pendingSubmission = heroSubmissionRef.current
-    if (!pendingSubmission) {
-      return
-    }
-    if (guestLimitsEnabled && guestUsageRestricted) {
-      heroSubmissionRef.current = null
+      setComposerNotice((previous) =>
+        previous ?? {
+          type: "info",
+          message: "Demo is preloaded. Configure session settings to send securely.",
+        }
+      )
       return
     }
 
-    const pendingMessage = pendingSubmission.message ?? ""
-    const pendingFiles = pendingSubmission.hasFiles ? [...uploadedFiles] : []
-    const hasContent = pendingMessage.trim().length > 0 || pendingFiles.length > 0
-    if (!hasContent) {
-      heroSubmissionRef.current = null
-      return
-    }
+    if (!canAutoSendDemo(readiness)) return
 
-    if (pendingSubmission.hasFiles && pendingFiles.length === 0) {
-      heroAutoSubmitAttemptedRef.current = false
-      return
-    }
-
-    heroAutoSubmitAttemptedRef.current = true
-    const timeout = window.setTimeout(() => {
-      const send = sendMessageRef.current
-      if (!send) {
-        heroAutoSubmitAttemptedRef.current = false
-        return
-      }
-
-      heroSubmissionRef.current = null
-      void send({ text: pendingMessage, files: pendingFiles })
-    }, 600)
-
-    return () => {
-      window.clearTimeout(timeout)
-    }
-  }, [providerApiBase, guestLimitsEnabled, guestUsageRestricted, uploadedFiles, secureChannelReady, heroSubmissionVersion])
+    const nextSend = pendingDemoSend
+    setPendingDemoSend(null)
+    void sendMessageRef.current(nextSend)
+  }, [
+    guestRestrictionActive,
+    isSending,
+    pendingDemoSend,
+    providerApiBase,
+    secureChannelReady,
+  ])
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -1972,12 +1906,12 @@ function ConfidentialAIContent() {
   }, [updateAutoScrollEnabled])
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-background">
+    <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-[#050C1B]">
       <main className="flex flex-1 flex-col min-h-0">
         <section className="relative flex h-full w-full flex-1 flex-col md:flex-row" aria-label="Confidential space">
           <aside
             className={cn(
-              "flex flex-col border-border/40 bg-white/95 transition-[opacity,transform,width] duration-200 dark:border-border/60 dark:bg-[#0B0820]/95 md:border-border/40 md:bg-white/85 md:dark:bg-card/25",
+              "flex flex-col border-border/40 bg-white/95 transition-[opacity,transform,width] duration-200 dark:border-white/10 dark:bg-[#0C1832]/95 md:border-border/40 md:bg-white/85 md:dark:bg-[#0C1832]/84",
               "fixed inset-y-0 left-0 z-40 h-[100dvh] w-[min(360px,90vw)] overflow-y-auto border-r shadow-[0_20px_60px_-25px_rgba(5,3,15,0.85)] md:static md:h-full md:w-auto md:flex-none md:border-b-0 md:border-r md:shadow-none",
               sidebarOpen
                 ? "translate-x-0 opacity-100 pointer-events-auto gap-6 p-5 sm:p-6 md:p-4 md:w-full md:max-w-[320px]"
@@ -1995,24 +1929,12 @@ function ConfidentialAIContent() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      {themeReady && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setTheme(activeTheme === "dark" ? "light" : "dark")}
-                          className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                          title={`Switch to ${activeTheme === "dark" ? "light" : "dark"} theme`}
-                        >
-                          {activeTheme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-                        </Button>
-                      )}
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         onClick={() => setSidebarOpen(false)}
-                        className="h-7 w-7 rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        className={sidebarIconButtonClass}
                       >
                         <PanelLeftClose className="h-4 w-4" />
                         <span className="sr-only">Collapse panel</span>
@@ -2020,50 +1942,50 @@ function ConfidentialAIContent() {
                     </div>
                   </div>
 
-                  <div className={cn(
-                    "rounded-xl border p-3 transition-colors",
-                    secureChannelReady 
-                      ? "border-emerald-500/20 bg-emerald-500/5 dark:border-emerald-500/30 dark:bg-emerald-500/10"
-                      : "border-amber-500/20 bg-amber-500/5"
-                  )}>
-                    <div className="flex items-center gap-2">
-                      <div className={cn("h-2 w-2 rounded-full animate-pulse", secureChannelReady ? "bg-emerald-500" : "bg-amber-500")} />
-                      <span className={cn("text-xs font-medium", secureChannelReady ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400")}>
-                        {secureChannelReady ? "Secure Channel Active" : "Establishing Security..."}
+                  <div className="rounded-xl border border-border/50 bg-card/40 p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <UserCircle2 className="h-3.5 w-3.5 text-brand-accent" />
+                      <span className="truncate max-w-[180px]">
+                        {authState === "signed-in" ? authUserEmail : "Guest User"}
                       </span>
-                    </div>
-                    <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
-                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <UserCircle2 className="h-3.5 w-3.5 text-brand-accent" />
-                          <span className="truncate max-w-[180px]">{authState === "signed-in" ? authUserEmail : "Guest User"}</span>
-                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <h3 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Session</h3>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        className={sidebarSessionButtonClass}
+                        onClick={() => setSessionDialogOpen(true)}
+                        title="Settings"
+                      >
+                        <Settings2 className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
+                        <span className="text-xs">Settings</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className={sidebarSessionButtonClass}
                         onClick={handleSaveConversation}
                         disabled={!hasConversationHistory}
                         title="Download JSON"
                       >
-                        <Save className="h-3.5 w-3.5 text-brand-primary" />
+                        <Save className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
                         <span className="text-xs">Save</span>
                       </Button>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="gap-2 border-border/50 bg-card/50 hover:bg-card/80"
+                        className={sidebarSessionButtonClass}
                         onClick={handleStartNewConversation}
                         disabled={isSending || isStreaming}
                       >
-                        <MessageSquarePlus className="h-3.5 w-3.5 text-brand-primary" />
+                        <MessageSquarePlus className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
                         <span className="text-xs">New</span>
                       </Button>
                     </div>
@@ -2081,62 +2003,41 @@ function ConfidentialAIContent() {
                       </span>
                     </AccordionTrigger>
                     <AccordionContent className="mt-3 space-y-3 rounded-2xl border border-brand-primary/30 bg-[linear-gradient(135deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.12))] p-4 shadow-sm dark:border-brand-primary/40 dark:bg-[linear-gradient(135deg,rgba(16,42,140,0.18),rgba(11,31,102,0.28))]">
-                      <ProofContent
+                      <AtlsProofContent
                         variant="sidebar"
-                        verificationState={verificationState}
-                        runtimeSignals={runtimeSignals}
                         onViewDetails={() => setProofDetailsModalOpen(true)}
                       />
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>
 
-                <div className="space-y-2">
-                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Reasoning intensity</h3>
-                  <div className="flex flex-wrap gap-2">
-                    {["low", "medium", "high"].map((effort) => (
-                      <Button
-                        key={effort}
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className={cn(
-                          "h-8 rounded-full border px-4 text-[11px] uppercase tracking-[0.24em]",
-                          reasoningEffort === effort
-                            ? "border-brand-primary bg-brand-gradient text-white hover:brightness-110"
-                            : "border-border/40 bg-card/70 text-muted-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-muted-foreground dark:hover:bg-card/30"
-                        )}
-                        onClick={() => setReasoningEffort(effort as "low" | "medium" | "high")}
-                        disabled={isSending}
-                      >
-                        {effort}
-                      </Button>
-                    ))}
+                <div className="mt-auto space-y-3 pt-4">
+                  <FeedbackButton source="confidential" position="inline" label="Contact" />
+                  <div className="flex items-center justify-center">
+                    <Link
+                      href="/"
+                      className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
+                    >
+                      <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
+                    </Link>
                   </div>
-                </div>
-
-                <div className="mt-auto pt-4 flex items-center justify-center">
-                  <Link
-                    href="/"
-                    className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
-                  >
-                    <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
-                  </Link>
                 </div>
               </>
             ) : (
-              <div className="flex h-full flex-col items-center justify-between gap-4 py-3">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSidebarOpen(true)}
-                  className="rounded-full border border-border/40 bg-card/80 text-muted-foreground transition hover:bg-card/90 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
-                >
-                  <PanelLeftOpen className="h-4 w-4" />
-                  <span className="sr-only">Expand panel</span>
-                </Button>
-                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+              <div className="flex h-full flex-col items-center justify-between py-3">
+                <div className="flex flex-col items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSidebarOpen(true)}
+                    className={sidebarIconButtonClass}
+                  >
+                    <PanelLeftOpen className="h-4 w-4" />
+                    <span className="sr-only">Expand panel</span>
+                  </Button>
+                </div>
+                <div className="flex flex-col items-center gap-3 text-muted-foreground dark:text-slate-300">
                   <Lock className="h-5 w-5 text-brand-accent" />
                   <span className="text-[10px] font-semibold uppercase tracking-[0.4em] [writing-mode:vertical-rl] [text-orientation:mixed]">
                     Confidential
@@ -2167,42 +2068,37 @@ function ConfidentialAIContent() {
               variant="ghost"
               size="icon"
               onClick={() => setSidebarOpen(true)}
-              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-white/90 text-muted-foreground shadow-md backdrop-blur md:hidden"
+              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-white/90 text-muted-foreground shadow-md backdrop-blur transition hover:bg-white md:hidden dark:border-white/15 dark:bg-[#0F1A37]/92 dark:text-slate-100 dark:hover:bg-[#13254E]"
             >
               <PanelLeftOpen className="h-4 w-4" />
               <span className="sr-only">Open confidential tools</span>
             </Button>
           ) : null}
 
-          <div className="flex flex-1 flex-col min-h-0">
-            <div
-              ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
-              role="log"
-              aria-live="polite"
-              aria-label="Confidential space transcript"
-            >
-              <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
-                {/* Onboarding Banner */}
-                {messages.length <= 1 && !guestNotice && (
-                  <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-primary/10 via-brand-secondary/5 to-transparent p-6 border border-brand-primary/20 dark:border-brand-primary/30">
-                     <div className="relative z-10 flex gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-brand-primary dark:text-brand-accent dark:bg-brand-accent/10">
-                           <ShieldCheck className="h-5 w-5" />
-                        </div>
-                        <div className="space-y-2">
-                           <h3 className="font-semibold text-foreground">Welcome to Confidential AI</h3>
-                           <p className="text-sm text-muted-foreground leading-relaxed max-w-lg">
-                              This chat session is end-to-end encrypted and processed inside a secure enclave (TEE). 
-                              Your data remains confidential even from the cloud provider. 
-                              Verify the "Attestation" status in the sidebar to ensure system integrity.
-                           </p>
-                        </div>
-                     </div>
-                     {/* Background decoration */}
-                     <div className="absolute -top-12 -right-12 h-48 w-48 rounded-full bg-brand-primary/5 blur-3xl" />
+          <div className="flex flex-1 min-h-0 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0)+56px)] sm:px-5 sm:pb-5 sm:pt-3">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-[#365082]/45 dark:bg-[linear-gradient(158deg,rgba(10,22,47,0.94),rgba(7,16,35,0.95))]">
+              <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0E1935]/84 sm:px-6">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
+                    <p className={cn("truncate text-sm font-semibold", secureWorkspaceTextClass)} title={secureWorkspaceHint}>
+                      {secureWorkspaceLabel}
+                    </p>
                   </div>
-                )}
+                  <div className="inline-flex self-start items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary sm:self-auto">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    <span>Private</span>
+                  </div>
+                </div>
+              </div>
+              <div
+                ref={messagesContainerRef}
+                className="flex-1 overflow-y-auto px-4 py-6 sm:px-8"
+                role="log"
+                aria-live="polite"
+                aria-label="Confidential space transcript"
+              >
+              <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
                 {guestNotice ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2239,10 +2135,8 @@ function ConfidentialAIContent() {
                           ? "Synthesising a confidential response…"
                           : m.content
 
-                  const label = isUser ? "You" : assistantName
-
                   const bubbleClass = isUser
-                    ? "w-full sm:max-w-[85%] md:max-w-3xl self-end whitespace-pre-wrap break-words rounded-3xl bg-brand-gradient px-6 py-4 text-left text-white shadow-md dark:shadow-none"
+                    ? "w-fit sm:max-w-[85%] md:max-w-3xl self-end whitespace-pre-wrap break-words rounded-3xl bg-brand-gradient px-6 py-4 text-left text-white shadow-md dark:shadow-none"
                     : "w-full sm:max-w-[85%] md:max-w-4xl self-start whitespace-pre-wrap break-words rounded-none bg-transparent px-0 py-0 text-left text-foreground leading-7"
 
                   const bubbleStyle: CSSProperties | undefined = isUser
@@ -2344,6 +2238,7 @@ function ConfidentialAIContent() {
                             <Markdown
                               content={bubbleText}
                               className={cn("markdown-body", isUser ? "text-white" : "text-foreground")}
+                              variant={isUser ? "inverted" : "default"}
                             />
                           </div>
                           {truncatedByLength && (
@@ -2360,7 +2255,7 @@ function ConfidentialAIContent() {
               </div>
             </div>
             {showScrollToLatest && (
-              <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+              <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center sm:bottom-20">
                 <Button
                   type="button"
                   size="sm"
@@ -2369,7 +2264,7 @@ function ConfidentialAIContent() {
                     "pointer-events-auto gap-1 rounded-full border border-border/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm backdrop-blur transition dark:border-border/60",
                     hasNewMessages
                       ? "bg-brand-gradient text-white hover:brightness-110"
-                      : "bg-white/95 text-foreground hover:bg-white dark:bg-card/30 dark:text-foreground dark:hover:bg-card/40"
+                      : "bg-white/95 text-foreground hover:bg-white dark:bg-[#13213E]/90 dark:text-slate-100 dark:hover:bg-[#172A50]"
                   )}
                   onClick={() => scrollToBottom()}
                 >
@@ -2381,135 +2276,54 @@ function ConfidentialAIContent() {
             <form
               ref={chatFormRef}
               onSubmit={onSubmit}
-              className="shrink-0 border-t border-border/40 bg-white/95 px-4 py-4 shadow-inner dark:bg-card/25"
+              className="shrink-0 border-t border-brand-primary/20 bg-white/85 px-4 py-4 shadow-inner backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0C1630]/92"
             >
-               <div className="mx-auto w-full space-y-4">
-                {verificationState.status === "success" && verificationState.isOutOfDate && (
-                  <div className="flex items-start gap-2 rounded-xl border border-amber-400/60 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300">
-                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <div className="flex-1 space-y-1.5">
-                      <p className="font-medium">Security update recommended</p>
-                      <p className="text-[11px] leading-relaxed">
-                        The service is working normally, but the provider should apply security updates.
-                      </p>
-                      {verificationState.advisoryIds && verificationState.advisoryIds.length > 0 && (
-                        <div className="pt-1.5 space-y-1">
-                          <p className="text-[11px] font-medium">Security advisories:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {verificationState.advisoryIds.map((advisory) => (
-                              <a
-                                key={advisory}
-                                href={`https://www.intel.com/content/www/us/en/security-center/advisory/${advisory.toLowerCase()}.html`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 dark:border-amber-400/40 dark:hover:bg-amber-400/10"
-                              >
-                                {advisory}
-                                <ExternalLink className="h-2.5 w-2.5" />
-                              </a>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {(() => {
-                  const isAttestationLoading = proofState.status === "loading"
-                  const isVerificationRunning = verificationState.status === "running"
-                  const isInProgress = isAttestationLoading || isVerificationRunning
-                  const isVerified = secureChannelReady
-                  const hasFailed =
-                    proofState.status === "error" ||
-                    verificationState.status === "error" ||
-                    (verificationState.status === "success" && !quoteVerified)
-                  
-                  if (proofState.status === "unavailable" || proofState.status === "idle") {
-                    return null
-                  }
-
-                  const isOutOfDate = verificationState.status === "success" && verificationState.isOutOfDate
-                  
-                  return (
-                    <div
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium",
-                        isVerified && !isOutOfDate
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-400/5 dark:text-emerald-300"
-                          : isVerified && isOutOfDate
-                            ? "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                            : isInProgress
-                              ? "border-brand-primary/60 bg-brand-primary/10 text-brand-primary dark:border-brand-primary/40 dark:bg-brand-primary/5"
-                              : hasFailed
-                                ? "border-rose-400/60 bg-rose-400/10 text-rose-700 dark:border-rose-400/40 dark:bg-rose-400/5 dark:text-rose-300"
-                                : "border-amber-400/60 bg-amber-400/10 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/5 dark:text-amber-300"
-                      )}
-                    >
-                      {isVerified && !isOutOfDate ? (
-                        <>
-                          <Lock className="h-4 w-4 shrink-0" />
-                          <span>Attestation verified</span>
-                        </>
-                      ) : isVerified && isOutOfDate ? (
-                        <>
-                          <AlertTriangle className="h-4 w-4 shrink-0" />
-                          <span>Secure channel verified (update recommended)</span>
-                        </>
-                      ) : isInProgress ? (
-                        <>
-                          <Sparkles className="h-4 w-4 shrink-0 animate-pulse" />
-                          <span>
-                            {isAttestationLoading && isVerificationRunning
-                              ? "Attesting and verifying…"
-                              : isAttestationLoading
-                                ? "Attesting enclave…"
-                                : "Verifying attestation…"}
-                          </span>
-                        </>
-                      ) : hasFailed ? (
-                        <>
-                          <X className="h-4 w-4 shrink-0" />
-                          <span className="truncate">Security verification failed</span>
-                        </>
-                      ) : (
-                        <>
-                          <Info className="h-4 w-4 shrink-0" />
-                          <span>Verification pending</span>
-                        </>
-                      )}
-                    </div>
-                  )
-                })()}
-                {uploadedFiles.length > 0 && (
-                  <div className="space-y-2">
-                    {uploadedFiles.map((file, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between rounded-xl border border-border/40 bg-white p-3 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/25"
-                      >
-                        <div className="flex items-center gap-2">
-                          <FileText className="size-3 text-brand-primary" />
-                          <span className="font-medium text-foreground">{file.name}</span>
-                          <span className="text-muted-foreground">
-                            ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
-                          </span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeFile(index)}
-                          className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-border/60 dark:hover:bg-card/30"
+              <div className="mx-auto w-full max-w-4xl">
+                <div className="rounded-2xl border border-brand-primary/25 bg-white/95 shadow-sm dark:border-[#335188]/60 dark:bg-[#132447]/88">
+                  {uploadedFiles.length > 0 && (
+                    <div className="space-y-2 border-b border-border/40 px-3 py-3 dark:border-border/60">
+                      {uploadedFiles.map((file, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between rounded-lg bg-card/40 px-2 py-2 text-xs text-muted-foreground dark:bg-[#0E1D3D]/72"
                         >
-                          <X className="size-3" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                          <div className="flex items-center gap-2">
+                            <FileText className="size-3 text-brand-primary" />
+                            <span className="font-medium text-foreground">{file.name}</span>
+                            <span className="text-muted-foreground">
+                              ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFile(index)}
+                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-white/20 dark:text-slate-100 dark:hover:bg-white/[0.08]"
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                <div className="flex w-full items-end gap-3">
-                  <div className="min-w-0 flex-1">
+                  {composerNotice && (
+                    <div className="px-3 pt-3">
+                      <div
+                        className={cn(
+                          "rounded-xl border px-3 py-2 text-xs",
+                          composerNotice.type === "error"
+                            ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
+                            : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
+                        )}
+                      >
+                        {composerNotice.message}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="relative flex w-full items-center gap-3 px-3 py-2">
                     <label htmlFor="secure-input" className="sr-only">
                       Secure message input
                     </label>
@@ -2518,15 +2332,14 @@ function ConfidentialAIContent() {
                       value={input}
                       onChange={(e) => {
                         setInput(e.target.value)
+                        if (composerNotice) setComposerNotice(null)
                       }}
                       onKeyDown={onKeyDown}
                       disabled={isSending || guestRestrictionActive}
-                      placeholder="Shift+Enter for a newline. Messages and attachments stay inside this secure workspace."
-                      className="min-h-[96px] w-full resize-none rounded-2xl border border-border/40 bg-white px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/70 shadow-sm focus:outline-none focus:ring-2 focus:ring-[#102A8C]/45 dark:border-border/60 dark:bg-card/15 sm:min-h-[56px]"
-                      rows={2}
+                      placeholder="Type your message..."
+                      className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
+                      rows={1}
                     />
-                  </div>
-                  <div className="ml-auto flex h-[96px] shrink-0 flex-col items-stretch justify-end gap-2 sm:ml-0 sm:h-[56px] sm:flex-row sm:items-stretch sm:gap-3">
                     <input
                       type="file"
                       ref={fileInputRef}
@@ -2535,21 +2348,19 @@ function ConfidentialAIContent() {
                       accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
                       className="hidden"
                     />
-                    <Button
+                    <button
                       type="button"
-                      variant="ghost"
-                      size="icon"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={isSending || guestRestrictionActive}
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl border border-border/40 bg-white text-foreground transition hover:bg-white/90 dark:border-border/60 dark:bg-card/20 dark:hover:bg-card/30 sm:flex-none"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50 dark:text-slate-200 dark:hover:bg-white/[0.08] dark:hover:text-white"
                       title="Upload files"
                     >
-                      <Paperclip className="h-5 w-5 text-brand-primary dark:text-foreground" />
-                    </Button>
+                      <Paperclip className="h-5 w-5" />
+                    </button>
                     <Button
                       type="submit"
                       size="icon"
-                      className="flex-1 h-full min-h-0 w-[56px] shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-white dark:text-foreground sm:flex-none"
+                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-[linear-gradient(135deg,rgba(31,74,201,0.95),rgba(18,49,146,0.95))]"
                       disabled={
                         guestRestrictionActive ||
                         isSending ||
@@ -2558,7 +2369,7 @@ function ConfidentialAIContent() {
                         !secureChannelReady
                       }
                     >
-                      <Send className="h-5 w-5" />
+                      <Send className="h-4 w-4" />
                       <span className="sr-only">Send secure message</span>
                     </Button>
                   </div>
@@ -2566,6 +2377,7 @@ function ConfidentialAIContent() {
               </div>
             </form>
           </div>
+        </div>
         </section>
       </main>
       <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
@@ -2573,148 +2385,116 @@ function ConfidentialAIContent() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <Lock className="h-5 w-5 text-brand-primary" />
-              Secure Session
+              Session Settings
             </DialogTitle>
           </DialogHeader>
-          <Tabs defaultValue="session" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 gap-2 rounded-full border border-border/40 bg-card/80 p-1 dark:border-border/60 dark:bg-card/20">
-              <TabsTrigger
-                value="session"
-                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[linear-gradient(135deg,#102A8C,#0B1F66)] data-[state=active]:text-white"
-              >
-                Session Details
-              </TabsTrigger>
-              <TabsTrigger
-                value="proof"
-                className="rounded-full px-4 py-2 text-[11px] uppercase tracking-[0.24em] data-[state=active]:bg-[linear-gradient(135deg,#102A8C,#0B1F66)] data-[state=active]:text-white"
-              >
-                Proof of Confidentiality
-              </TabsTrigger>
-            </TabsList>
-            <TabsContent value="session" className="space-y-4 mt-4">
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">{connectionSummary}</p>
-                <div className="space-y-3 text-xs">
-                  {modelDisplayLabel && (
-                    <div className="flex items-center gap-2">
-                      <Bot className="size-4 text-brand-primary" />
-                      <span className="text-muted-foreground">
-                        <span className="font-medium">Model:</span>{" "}
-                        <span title={modelDisplayTitle}>{modelDisplayLabel}</span>
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Bot className="size-4 text-brand-primary" />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Assistant:</span> {assistantName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className={cn("size-4", providerConfigured ? "text-foreground" : "text-muted-foreground/50")} />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Base URL:</span>{" "}
-                      {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
-                    </span>
-                  </div>
-                  {providerHost && (
-                    <div className="flex items-center gap-2">
-                      <Globe className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground" title={providerHost}>
-                        <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <Lock className="size-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">
-                      <span className="font-medium">Bearer token:</span>{" "}
-                      {tokenPresent ? "Loaded in session" : "Not provided (optional)"}
-                    </span>
-                  </div>
-                  {cacheSalt && (
-                    <div className="flex items-center gap-2">
-                      <Key className="size-4 text-muted-foreground" />
-                      <span className="text-muted-foreground" title={cacheSalt}>
-                        <span className="font-medium">KV cache salt:</span>{" "}
-                        <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
-                      </span>
-                    </div>
-                  )}
+          <div className="space-y-3 mt-2">
+            <p className="text-sm text-muted-foreground">{connectionSummary}</p>
+            <div className="space-y-3 text-xs">
+              {modelDisplayLabel && (
+                <div className="flex items-center gap-2">
+                  <Bot className="size-4 text-brand-primary" />
+                  <span className="text-muted-foreground">
+                    <span className="font-medium">Model:</span>{" "}
+                    <span title={modelDisplayTitle}>{modelDisplayLabel}</span>
+                  </span>
                 </div>
-                <div className="pt-3">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
-                    onClick={() => setShowAdvancedSettings((previous) => !previous)}
-                  >
-                    {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
-                  </Button>
+              )}
+              <div className="flex items-center gap-2">
+                <Bot className="size-4 text-brand-primary" />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Assistant:</span> {assistantName}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className={cn("size-4", providerConfigured ? "text-foreground" : "text-muted-foreground/50")} />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Base URL:</span>{" "}
+                  {providerApiBase ? truncateMiddle(providerApiBase, 35) : "Not configured"}
+                </span>
+              </div>
+              {providerHost && (
+                <div className="flex items-center gap-2">
+                  <Globe className="size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground" title={providerHost}>
+                    <span className="font-medium">Host:</span> {truncateMiddle(providerHost, 35)}
+                  </span>
                 </div>
-                {showAdvancedSettings && (
-                  <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
-                      Advanced provider settings
-                    </h3>
-                    <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
-                      <span className="font-medium text-foreground">Base URL</span>
-                      <input
-                        id="provider-base-url"
-                        type="url"
-                        inputMode="url"
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder="https://tee.example.com"
-                        value={providerBaseUrlInput}
-                        onChange={(event) => setProviderBaseUrlInput(event.target.value)}
-                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
-                      />
-                    </label>
-                    <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
-                      <span className="font-medium text-foreground">Bearer token (optional)</span>
-                      <input
-                        id="provider-api-key"
-                        type="password"
-                        autoComplete="off"
-                        spellCheck={false}
-                        placeholder="token-..."
-                        value={providerApiKeyInput}
-                        onChange={(event) => setProviderApiKeyInput(event.target.value)}
-                        className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
-                      />
-                    </label>
-                    {configError && (
-                      <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
-                        {configError}
-                      </div>
-                    )}
-                    <p className="text-[11px] text-muted-foreground">
-                      Stored locally. Refreshing the page clears the token (session storage).
-                    </p>
+              )}
+              <div className="flex items-center gap-2">
+                <Lock className="size-4 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  <span className="font-medium">Bearer token:</span>{" "}
+                  {tokenPresent ? "Loaded in session" : "Not provided (optional)"}
+                </span>
+              </div>
+              {cacheSalt && (
+                <div className="flex items-center gap-2">
+                  <Key className="size-4 text-muted-foreground" />
+                  <span className="text-muted-foreground" title={cacheSalt}>
+                    <span className="font-medium">KV cache salt:</span>{" "}
+                    <span className="font-mono">{cacheSalt.slice(0, 8)}...{cacheSalt.slice(-4)}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="pt-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
+                onClick={() => setShowAdvancedSettings((previous) => !previous)}
+              >
+                {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
+              </Button>
+            </div>
+            {showAdvancedSettings && (
+              <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                  Advanced provider settings
+                </h3>
+                <label htmlFor="provider-base-url" className="block space-y-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">Base URL</span>
+                  <input
+                    id="provider-base-url"
+                    type="url"
+                    inputMode="url"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="https://tee.example.com"
+                    value={providerBaseUrlInput}
+                    onChange={(event) => setProviderBaseUrlInput(event.target.value)}
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                  />
+                </label>
+                <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
+                  <span className="font-medium text-foreground">Bearer token (optional)</span>
+                  <input
+                    id="provider-api-key"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder="token-..."
+                    value={providerApiKeyInput}
+                    onChange={(event) => setProviderApiKeyInput(event.target.value)}
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                  />
+                </label>
+                {configError && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+                    {configError}
                   </div>
                 )}
+                <p className="text-[11px] text-muted-foreground">
+                  Base URL is stored locally for convenience. Bearer token stays in memory only and is cleared on refresh.
+                </p>
               </div>
-            </TabsContent>
-            <TabsContent value="proof" className="space-y-4 mt-4">
-              <p className="text-sm text-muted-foreground">
-                {derivedAttestationOrigin
-                  ? `Each refresh requests a fresh Intel TDX quote from ${getHostLabelFromUrl(derivedAttestationOrigin) ?? derivedAttestationOrigin}.`
-                  : "Point NEXT_PUBLIC_ATTESTATION_BASE_URL at your Umbra CVM to surface the attestation origin."}
-              </p>
-              <ProofContent
-                variant="dialog"
-                verificationState={verificationState}
-                runtimeSignals={runtimeSignals}
-                onViewDetails={() => setProofDetailsModalOpen(true)}
-              />
-            </TabsContent>
-          </Tabs>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
-      <ProofDetailsModal />
-      <FeedbackButton source="confidential" position="top-right" />
+      <AtlsDetailsModal />
     </div>
   )
 }

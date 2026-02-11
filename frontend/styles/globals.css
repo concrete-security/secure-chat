@@ -39,24 +39,24 @@
 
   .dark {
     /* Dark Mode: Secure midnight treatment */
-    --background: 250 65% 10%;
+    --background: 221 47% 9%;
     --foreground: 210 20% 98%;
-    --card: 249 55% 16%;
+    --card: 221 41% 14%;
     --card-foreground: 0 0% 100%;
-    --popover: 250 58% 12%;
+    --popover: 221 45% 11%;
     --popover-foreground: 0 0% 100%;
     /* Brand highlight */
     --primary: 0 0% 100%;
-    --primary-foreground: 250 65% 10%;
+    --primary-foreground: 221 47% 9%;
     /* Brand colors for replacements (keep consistent with light theme) */
     --brand-primary: 227 80% 30%;
     --brand-secondary: 227 80% 22%;
     --brand-accent: 241 77% 47%;
     /* Subtle tinted surfaces */
-    --secondary: 250 45% 18%;
+    --secondary: 221 32% 18%;
     --secondary-foreground: 0 0% 96%;
-    --muted: 250 35% 24%;
-    --muted-foreground: 0 0% 90%;
+    --muted: 221 28% 23%;
+    --muted-foreground: 215 20% 82%;
     --accent: 227 80% 52%;
     --accent-foreground: 0 0% 100%;
     /* Feedback colors */
@@ -65,9 +65,9 @@
     --success: 145 65% 45%;
     --success-foreground: 0 0% 8%;
     /* UI chrome */
-    --border: 249 40% 35%;
-    --input: 249 40% 35%;
-    --ring: 0 0% 100%;
+    --border: 220 26% 30%;
+    --input: 220 26% 30%;
+    --ring: 220 72% 74%;
   }
 
 }
@@ -149,11 +149,31 @@
   }
 
   .markdown-body code {
-    @apply rounded bg-muted px-1.5 py-0.5 text-sm font-mono;
+    @apply rounded-md px-1.5 py-0.5 text-[13px] font-mono;
+    background: hsl(250 40% 94%);
+    color: hsl(262 88% 28%);
+  }
+
+  .dark .markdown-body code {
+    background: hsl(250 40% 20%);
+    color: hsl(250 70% 80%);
   }
 
   .markdown-body pre {
-    @apply m-0 mb-4 bg-muted/60 px-4 py-3 text-sm font-mono leading-relaxed rounded-lg overflow-x-auto;
+    @apply relative m-0 mb-4 last:mb-0 px-4 py-3 text-[13px] font-mono leading-relaxed rounded-xl overflow-x-auto;
+    background: hsl(250 30% 97%);
+    border: 1px solid hsl(var(--border) / 0.4);
+    color: hsl(250 30% 15%);
+  }
+
+  .dark .markdown-body pre {
+    background: hsl(250 40% 12%);
+    color: hsl(210 20% 92%);
+  }
+
+  .markdown-body pre code {
+    @apply bg-transparent p-0 text-[13px] font-mono;
+    color: inherit;
   }
 
   .markdown-body h1,
@@ -183,12 +203,16 @@
   }
 
   .markdown-table thead {
-    @apply bg-muted/40;
+    background: hsl(250 40% 94%);
+  }
+
+  .dark .markdown-table thead {
+    background: hsl(250 40% 16%);
   }
 
   .markdown-table th,
   .markdown-table td {
-    @apply border border-border px-4 py-2 align-top break-words whitespace-normal;
+    @apply border border-border/50 px-4 py-2 align-top break-words whitespace-normal;
   }
 
   .markdown-table .align-left {

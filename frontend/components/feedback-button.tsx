@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useRef, useState } from "react"
+import { FormEvent, useCallback, useRef, useState } from "react"
 import { MessageSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,8 @@ import { useFormToken } from "@/hooks/use-form-token"
 
 type FeedbackButtonProps = {
   source: "landing" | "confidential"
-  position?: "bottom-right" | "top-right"
+  position?: "bottom-right" | "top-right" | "inline"
+  label?: string
 }
 
 const initialFormState = {
@@ -19,19 +20,45 @@ const initialFormState = {
   message: "",
 }
 
-export function FeedbackButton({ source, position = "bottom-right" }: FeedbackButtonProps) {
+export function FeedbackButton({ source, position = "bottom-right", label = "Contact" }: FeedbackButtonProps) {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(initialFormState)
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
   const honeypotRef = useRef<HTMLInputElement | null>(null)
-  const { token: formToken, loading: formTokenLoading, error: formTokenError, refreshToken } = useFormToken()
+  const {
+    token: formToken,
+    loading: formTokenLoading,
+    error: formTokenError,
+    refreshToken,
+    isTokenExpiredOrExpiring,
+  } = useFormToken()
 
   const resetForm = () => {
     setForm(initialFormState)
     setStatus("idle")
     setError(null)
   }
+
+  const submitFeedback = useCallback(
+    async (token: string, checkpointValue: string): Promise<Response> => {
+      return fetch("/api/feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          message: form.message,
+          source,
+          form_token: token,
+          checkpoint: checkpointValue || undefined,
+        }),
+      })
+    },
+    [form.email, form.message, form.name, source]
+  )
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -43,34 +70,42 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
       return
     }
 
-    if (!formToken) {
-      setError("Secure form token unavailable. Please try again.")
-      void refreshToken()
-      return
+    // If token is missing or expired, get a fresh one before submitting
+    let tokenToUse = formToken
+    if (!tokenToUse || isTokenExpiredOrExpiring()) {
+      const freshToken = await refreshToken()
+      if (!freshToken) {
+        setError("Secure form token unavailable. Please try again.")
+        return
+      }
+      tokenToUse = freshToken
     }
 
     setStatus("loading")
     setError(null)
 
     try {
-      const response = await fetch("/api/feedback", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: form.name,
-          email: form.email,
-          message: form.message,
-          source,
-          form_token: formToken,
-          checkpoint: checkpointValue || undefined,
-        }),
-      })
+      let response = await submitFeedback(tokenToUse, checkpointValue)
 
+      // If token expired during submission, retry once with a fresh token
       if (!response.ok) {
         const payload = await response.json().catch(() => null)
-        throw new Error(payload?.error ?? "Unable to send feedback right now.")
+        const errorMessage = payload?.error ?? ""
+
+        if (errorMessage.toLowerCase().includes("expired")) {
+          const freshToken = await refreshToken()
+          if (freshToken) {
+            response = await submitFeedback(freshToken, checkpointValue)
+            if (!response.ok) {
+              const retryPayload = await response.json().catch(() => null)
+              throw new Error(retryPayload?.error ?? "Unable to send feedback right now.")
+            }
+          } else {
+            throw new Error("Unable to refresh security token. Please try again.")
+          }
+        } else {
+          throw new Error(errorMessage || "Unable to send feedback right now.")
+        }
       }
 
       setStatus("success")
@@ -87,30 +122,46 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
 
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen)
+    if (nextOpen && isTokenExpiredOrExpiring()) {
+      // Refresh token when dialog opens if it's expired or expiring soon
+      void refreshToken()
+    }
     if (!nextOpen && status === "success") {
       resetForm()
     }
   }
+  const isInline = position === "inline"
+
   const placementClass =
     position === "top-right"
       ? "top-[calc(env(safe-area-inset-top,0)+16px)] right-4 sm:right-6 sm:top-[calc(env(safe-area-inset-top,0)+24px)]"
-      : "bottom-[calc(env(safe-area-inset-bottom,0)+20px)] right-4 sm:bottom-6 sm:right-6"
+      : source === "confidential"
+        ? "bottom-[calc(env(safe-area-inset-bottom,0)+104px)] right-4 sm:bottom-6 sm:right-6"
+        : "bottom-[calc(env(safe-area-inset-bottom,0)+20px)] right-4 sm:bottom-6 sm:right-6"
 
   return (
-    <div className={cn("fixed z-20 flex flex-col items-end gap-3 md:z-40", placementClass)}>
+    <div className={cn(isInline ? "w-full" : "fixed z-20 flex flex-col items-end gap-3 md:z-40", !isInline && placementClass)}>
       <Button
         onClick={() => setOpen(true)}
-        className="rounded-full bg-[#08070B] px-5 py-2 text-sm font-semibold text-white shadow-lg shadow-[#08070B]/30 hover:bg-[#1B0986]"
+        className={cn(
+          isInline
+            ? "h-10 w-full justify-center rounded-xl border border-border/50 bg-card/70 px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-card/90"
+            : "rounded-full bg-[#08070B] text-sm font-semibold text-white shadow-lg shadow-[#08070B]/30 hover:bg-[#1B0986]",
+          !isInline && (source === "confidential" ? "px-4 py-2 text-xs sm:px-5 sm:text-sm" : "px-5 py-2")
+        )}
       >
         <MessageSquare className="size-4" />
-        Give feedback
+        {label}
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md border border-[#d4d3e6] bg-white/95 p-0 shadow-xl">
           <DialogHeader className="space-y-2 border-b border-[#d4d3e6]/60 px-6 py-4">
-            <DialogTitle className="text-lg font-semibold text-[#08070B]">Private beta feedback</DialogTitle>
+            <DialogTitle className="text-lg font-semibold text-[#08070B]">Contact</DialogTitle>
             <DialogDescription className="text-sm text-[#1F1E28]/80">
-              Share what&apos;s working, what&apos;s broken, or what you&apos;d like to see next. We read every note.
+              Share what&apos;s working, what&apos;s broken, or what you&apos;d like to see next. Prefer email:{" "}
+              <a className="font-medium text-[#1B0986] underline-offset-2 hover:underline" href="mailto:contact@concrete-security.com">
+                contact@concrete-security.com
+              </a>
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4 px-6 py-5">
@@ -148,7 +199,7 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
               />
             </label>
             <label className="text-sm font-medium text-[#1F1E28]">
-              Feedback
+              Message
               <textarea
                 value={form.message}
                 onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
@@ -172,7 +223,7 @@ export function FeedbackButton({ source, position = "bottom-right" }: FeedbackBu
                 className="rounded-full bg-[#1B0986] px-5 py-2 text-sm font-semibold text-white hover:bg-[#120463]"
                 disabled={status === "loading" || status === "success" || formTokenLoading || !formToken}
               >
-                {status === "loading" ? "Sending…" : status === "success" ? "Sent" : "Send feedback"}
+                {status === "loading" ? "Sending…" : status === "success" ? "Sent" : "Send message"}
               </Button>
             </div>
           </form>

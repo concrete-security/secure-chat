@@ -14,6 +14,26 @@ import path from "path"
 // - EXAMPLE_THEMES is the map of all available example themes.
 import { EXAMPLE_THEMES, type ExampleThemeId } from "@/lib/example-themes"
 
+async function resolveThemeDirectory(themeDir: string) {
+  const candidates = [
+    path.join(process.cwd(), "examples_docs", themeDir),
+    path.join(process.cwd(), "frontend", "examples_docs", themeDir),
+  ]
+
+  for (const candidate of candidates) {
+    try {
+      const stats = await fs.stat(candidate)
+      if (stats.isDirectory()) {
+        return candidate
+      }
+    } catch {
+      // Keep checking fallbacks.
+    }
+  }
+
+  return candidates[0]
+}
+
 
 // GET /api/example-docs/[anything]
 // Exemple: /api/example-docs/medical-report
@@ -37,7 +57,7 @@ export async function GET(
   }
 
   // Build the path based on the theme: <projet>/examples_docs/<dir>/
-  const baseDir = path.join(process.cwd(), "examples_docs", theme.dir)
+  const baseDir = await resolveThemeDirectory(theme.dir)
 
 
   try {
