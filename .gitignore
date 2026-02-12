@@ -11,3 +11,6 @@ __pypackages__/
 .pytest_cache
 frontend/tsconfig.tsbuildinfo
 ratls/
+
+# Claude
+CLAUDE.local.md
