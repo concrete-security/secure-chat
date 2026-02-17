@@ -12,7 +12,13 @@ export async function middleware(request: NextRequest) {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    if (process.env.NODE_ENV !== "production") {
+    if (process.env.NODE_ENV === "production") {
+      // Fail closed in production: auth infrastructure must be available
+      const pathname = request.nextUrl.pathname
+      if (pathname.startsWith("/confidential-ai")) {
+        return NextResponse.redirect(new URL("/sign-in?auth=required", request.url))
+      }
+    } else {
       console.warn("Supabase middleware skipped: NEXT_PUBLIC_SUPABASE_URL or ANON key missing.")
     }
     return response
@@ -35,6 +41,26 @@ export async function middleware(request: NextRequest) {
     await supabase.auth.getSession()
   } catch (error) {
     console.warn("Supabase middleware session refresh failed:", error)
+  }
+
+  const pathname = request.nextUrl.pathname
+  if (pathname.startsWith("/confidential-ai")) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        const signInUrl = new URL("/sign-in", request.url)
+        signInUrl.searchParams.set("redirect", pathname)
+        signInUrl.searchParams.set("auth", "required")
+        return NextResponse.redirect(signInUrl)
+      }
+    } catch (error) {
+      console.warn("Supabase middleware auth check failed:", error)
+      // Fail closed: redirect to sign-in on auth errors
+      const signInUrl = new URL("/sign-in", request.url)
+      signInUrl.searchParams.set("redirect", pathname)
+      signInUrl.searchParams.set("auth", "required")
+      return NextResponse.redirect(signInUrl)
+    }
   }
 
   return response

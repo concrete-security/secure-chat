@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { LogOut, MessageSquare } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -23,18 +24,11 @@ export function NavAuthButton() {
     }
   }, [])
   const [authState, setAuthState] = useState<AuthState>(supabase ? "loading" : "signed-out")
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
   const isInitializedRef = useRef(false)
-
-  const applySession = useCallback((sessionUserPresent: boolean) => {
-    setAuthState((previous) => {
-      const next = sessionUserPresent ? "signed-in" : "signed-out"
-      if (previous === next) {
-        return previous
-      }
-      return next
-    })
-  }, [])
 
   useEffect(() => {
     if (isInitializedRef.current) {
@@ -54,25 +48,23 @@ export function NavAuthButton() {
     async function resolveInitialState() {
       try {
         const { data, error } = await authClient.auth.getUser()
-        if (!mounted) {
-          return
-        }
+        if (!mounted) return
         if (error) {
-          if (isAuthSessionMissingError(error)) {
-            setAuthState((prev) => (prev === "signed-out" ? prev : "signed-out"))
-            return
+          if (!isAuthSessionMissingError(error)) {
+            console.error("Failed to resolve Supabase user", error)
           }
-          console.error("Failed to resolve Supabase user", error)
-          setAuthState((prev) => (prev === "signed-out" ? prev : "signed-out"))
+          setAuthState("signed-out")
           return
         }
-        const newState = data.user ? "signed-in" : "signed-out"
-        setAuthState((prev) => (prev === newState ? prev : newState))
+        if (data.user) {
+          setAuthState("signed-in")
+          setUserEmail(data.user.email ?? null)
+        } else {
+          setAuthState("signed-out")
+        }
       } catch (error) {
         console.error("Unexpected error resolving Supabase user", error)
-        if (mounted) {
-          setAuthState((prev) => (prev === "signed-out" ? prev : "signed-out"))
-        }
+        if (mounted) setAuthState("signed-out")
       }
     }
 
@@ -80,12 +72,15 @@ export function NavAuthButton() {
 
     const {
       data: { subscription },
-    } = authClient.auth.onAuthStateChange((_event: string, session: { user: unknown } | null) => {
-      if (!mounted) {
-        return
+    } = authClient.auth.onAuthStateChange((_event: string, session: { user: { email?: string } } | null) => {
+      if (!mounted) return
+      if (session?.user) {
+        setAuthState("signed-in")
+        setUserEmail(session.user.email ?? null)
+      } else {
+        setAuthState("signed-out")
+        setUserEmail(null)
       }
-      const newState = session?.user ? "signed-in" : "signed-out"
-      setAuthState((prev) => (prev === newState ? prev : newState))
     })
 
     return () => {
@@ -94,49 +89,76 @@ export function NavAuthButton() {
     }
   }, [supabase])
 
+  useEffect(() => {
+    if (!menuOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [menuOpen])
+
+  const handleSignOut = useCallback(async () => {
+    if (!supabase || isSigningOut) return
+    setIsSigningOut(true)
+    setMenuOpen(false)
+    try {
+      await supabase.auth.signOut()
+      setAuthState("signed-out")
+      setUserEmail(null)
+      router.replace("/")
+    } catch (error) {
+      console.error("Failed to sign out", error)
+    } finally {
+      setIsSigningOut(false)
+    }
+  }, [supabase, isSigningOut, router])
+
   if (authState === "loading") {
     return (
-      <Button
-        variant="outline"
-        className="h-9 rounded-full border border-[#1B0986] px-4 text-sm text-[#1B0986]"
-        disabled
-      >
-        Checking access…
-      </Button>
+      <div className="h-9 w-9 animate-pulse rounded-full bg-muted" />
     )
   }
 
   if (authState === "signed-in") {
-    const handleSignOut = async () => {
-      if (!supabase || isSigningOut) {
-        return
-      }
-      setIsSigningOut(true)
-      try {
-        await supabase.auth.signOut()
-        applySession(false)
-        router.replace("/")
-      } catch (error) {
-        console.error("Failed to sign out", error)
-      } finally {
-        setIsSigningOut(false)
-      }
-    }
-
+    const initial = userEmail ? userEmail[0].toUpperCase() : "U"
     return (
-      <div className="flex items-center gap-2">
-        <Button className="h-9 rounded-full bg-[#08070B] px-5 text-sm font-medium text-white shadow-[0_14px_28px_-16px_rgba(15,11,56,0.65)] hover:bg-[#111015]" asChild>
-          <Link href="/admin/waitlist">Waitlist console</Link>
-        </Button>
-        <Button
+      <div className="relative" ref={menuRef}>
+        <button
           type="button"
-          variant="outline"
-          className="h-9 rounded-full border border-[#1B0986] px-4 text-sm font-medium text-[#1B0986] transition hover:border-[#0B0870] hover:text-[#0B0870]"
-          onClick={handleSignOut}
-          disabled={isSigningOut}
+          onClick={() => setMenuOpen((prev) => !prev)}
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/20 text-sm font-semibold text-primary transition hover:bg-primary/30"
+          title={userEmail ?? "Account"}
         >
-          {isSigningOut ? "Signing out…" : "Sign out"}
-        </Button>
+          {initial}
+        </button>
+        {menuOpen ? (
+          <div className="absolute right-0 top-full z-50 mt-2 w-60 rounded-xl border border-border/60 bg-card p-1 shadow-lg">
+            <div className="px-3 py-2 text-xs text-muted-foreground truncate">
+              {userEmail}
+            </div>
+            <div className="h-px bg-border/60" />
+            <Link
+              href="/confidential-ai"
+              onClick={() => setMenuOpen(false)}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              Confidential Chat
+            </Link>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={isSigningOut}
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              {isSigningOut ? "Signing out…" : "Sign out"}
+            </button>
+          </div>
+        ) : null}
       </div>
     )
   }
@@ -144,7 +166,7 @@ export function NavAuthButton() {
   return (
     <Button
       variant="outline"
-      className="h-9 rounded-full border border-[#1B0986] px-5 text-sm font-medium text-[#1B0986] transition hover:border-[#0B0870] hover:text-[#0B0870]"
+      className="h-9 rounded-full border border-primary px-5 text-sm font-medium text-primary transition hover:border-primary/80 hover:text-primary/80"
       asChild
     >
       <Link href="/sign-in">Sign in</Link>

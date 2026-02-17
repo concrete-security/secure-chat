@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 import AdminWaitlistClient from "./client"
 
 import { AuthenticatedAccessError, requireAdminUser } from "@/lib/auth"
-import { ForceLightTheme } from "@/components/force-light-theme"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 
 export default async function AdminWaitlistPage() {
@@ -26,9 +25,5 @@ export default async function AdminWaitlistPage() {
     throw error
   }
 
-  return (
-    <ForceLightTheme>
-      <AdminWaitlistClient />
-    </ForceLightTheme>
-  )
+  return <AdminWaitlistClient />
 }
