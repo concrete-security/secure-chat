@@ -2063,6 +2063,22 @@ function ConfidentialAIContent() {
                               <Home className="h-3.5 w-3.5" />
                               Back to Umbra
                             </Link>
+                            <Link
+                              href="/confidential-ai"
+                              onClick={() => setUserMenuOpen(false)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground transition hover:bg-muted"
+                            >
+                              <MessageSquarePlus className="h-3.5 w-3.5" />
+                              Confidential Chat
+                            </Link>
+                            <Link
+                              href="/personal-agents"
+                              onClick={() => setUserMenuOpen(false)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            >
+                              <Bot className="h-3.5 w-3.5" />
+                              Private AI Agents
+                            </Link>
                             <button
                               type="button"
                               onClick={handleSignOut}

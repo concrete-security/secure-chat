@@ -1,6 +1,7 @@
 "use client"
 
-import { User, LogOut, Lock } from "lucide-react"
+import Link from "next/link"
+import { User, LogOut, Lock, Home, MessageSquare, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -27,6 +28,25 @@ export function UserMenu() {
         <DropdownMenuLabel className="font-normal">
           <p className="text-sm font-medium">{authEmail ?? "Authenticated"}</p>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link href="/">
+            <Home className="mr-2 h-4 w-4" />
+            Back to Umbra
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/confidential-ai">
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Confidential Chat
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild className="text-foreground">
+          <Link href="/personal-agents">
+            <Bot className="mr-2 h-4 w-4" />
+            Private AI Agents
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         {vaultSessionId ? (
           <DropdownMenuItem onClick={() => void handleVaultLock()}>
