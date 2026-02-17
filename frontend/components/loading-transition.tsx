@@ -12,28 +12,29 @@ export function LoadingTransition({ message = "Establishing secure connection...
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 flex items-center justify-center bg-[#E2E2E2]/95 backdrop-blur-md",
+        "fixed inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-md",
         "animate-in fade-in duration-300",
         className
       )}
     >
       <div className="relative flex flex-col items-center gap-6">
         <div
-          className="pointer-events-none absolute inset-0 -translate-y-12 bg-[radial-gradient(circle_at_center,#102A8C_0%,transparent_70%)] opacity-20"
+          className="pointer-events-none absolute inset-0 -translate-y-12 opacity-20"
           aria-hidden="true"
+          style={{ background: "radial-gradient(circle at center, hsl(var(--primary)) 0%, transparent 70%)" }}
         />
         <div className="relative flex items-center justify-center">
-          <div className="absolute inset-0 animate-ping rounded-full bg-[#102A8C]/20" style={{ animationDuration: "2s" }} />
-          <div className="relative flex size-20 items-center justify-center rounded-full border-2 border-[#102A8C]/30 bg-white shadow-lg">
-            <Lock className="size-8 animate-pulse text-[#102A8C]" />
+          <div className="absolute inset-0 animate-ping rounded-full bg-primary/20" style={{ animationDuration: "2s" }} />
+          <div className="relative flex size-20 items-center justify-center rounded-full border-2 border-primary/30 bg-card shadow-lg">
+            <Lock className="size-8 animate-pulse text-primary" />
           </div>
         </div>
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-center gap-2">
-            <Loader2 className="size-4 animate-spin text-[#102A8C]" />
-            <p className="text-sm font-medium text-black/70">{message}</p>
+            <Loader2 className="size-4 animate-spin text-primary" />
+            <p className="text-sm font-medium text-muted-foreground">{message}</p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-black/50">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
             <Shield className="size-3" />
             <span>End-to-end encrypted</span>
           </div>

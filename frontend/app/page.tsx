@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import Image from "next/image"
-import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react"
 import { useRouter } from "next/navigation"
 import {
   ArrowRight,
@@ -14,12 +14,18 @@ import {
   Paperclip,
   X,
   Brain,
+  Sparkles,
+  Check,
+  Terminal,
 } from "lucide-react"
 
 import { LoadingTransition } from "@/components/loading-transition"
-import { ForceLightTheme } from "@/components/force-light-theme"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { NavAuthButton } from "@/components/nav-auth-button"
 import AnnouncementBar from "@/components/announcement-bar"
+import { FadeIn } from "@/components/motion/fade-in"
+import { StaggerChildren } from "@/components/motion/stagger-children"
 import { EXAMPLE_THEMES, type ExampleTheme } from "@/lib/example-themes"
 import { DEMO_HANDOFF_STORAGE_KEY, type DemoHandoffPayload } from "@/lib/demo-handoff"
 import {
@@ -59,6 +65,108 @@ const securityQuickGuarantees = [
   "Attestation is checked before processing",
   "Only your device decrypts the final output",
 ]
+
+type AgentDemoScenario = {
+  prompt: string
+  steps: string[]
+}
+
+const agentDemoScenarios: AgentDemoScenario[] = [
+  {
+    prompt: "Review Q3 financials and flag anomalies",
+    steps: [
+      "Loaded 3 files into private workspace",
+      "Cross-referenced revenue across subsidiaries",
+      "Flagged 2 anomalies in deferred revenue",
+      "Generated compliance memo (PDF)",
+    ],
+  },
+  {
+    prompt: "Scan vendor contracts for GDPR exposure",
+    steps: [
+      "Parsed 12 vendor agreements securely",
+      "Identified 4 missing DPA clauses",
+      "Drafted amendment language per contract",
+      "Exported risk matrix to encrypted storage",
+    ],
+  },
+  {
+    prompt: "Summarize patient trial data for board deck",
+    steps: [
+      "Ingested 847 anonymized patient records",
+      "Computed efficacy stats across cohorts",
+      "Built 6 visualization slides",
+      "All data stayed end-to-end encrypted",
+    ],
+  },
+]
+
+function AgentDemo() {
+  const [scenarioIndex, setScenarioIndex] = useState(0)
+  const [visibleSteps, setVisibleSteps] = useState(0)
+  const [phase, setPhase] = useState<"typing" | "done" | "fade">("typing")
+
+  const scenario = agentDemoScenarios[scenarioIndex]
+
+  useEffect(() => {
+    if (phase === "typing" && visibleSteps < scenario.steps.length) {
+      const timer = setTimeout(() => setVisibleSteps((s) => s + 1), 1400)
+      return () => clearTimeout(timer)
+    }
+    if (phase === "typing" && visibleSteps === scenario.steps.length) {
+      const timer = setTimeout(() => setPhase("done"), 2000)
+      return () => clearTimeout(timer)
+    }
+    if (phase === "done") {
+      const timer = setTimeout(() => setPhase("fade"), 3500)
+      return () => clearTimeout(timer)
+    }
+    if (phase === "fade") {
+      const timer = setTimeout(() => {
+        setScenarioIndex((i) => (i + 1) % agentDemoScenarios.length)
+        setVisibleSteps(0)
+        setPhase("typing")
+      }, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [phase, visibleSteps, scenario.steps.length])
+
+  return (
+    <div
+      className={`rounded-2xl border border-border/60 bg-[hsl(222_47%_4%)] p-4 font-mono text-xs transition-opacity duration-300 ${phase === "fade" ? "opacity-0" : "opacity-100"}`}
+    >
+      <div className="flex items-center gap-2 text-amber-400/80 mb-3">
+        <Terminal className="h-3.5 w-3.5" />
+        <span className="text-[10px] font-semibold uppercase tracking-[0.2em]">Private Agent</span>
+        <span className="ml-auto flex items-center gap-1.5 text-[10px] text-emerald-400/80">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          Secure session
+        </span>
+      </div>
+      <div className="text-muted-foreground mb-2.5">
+        <span className="text-amber-400/60">$</span>{" "}
+        <span className="text-foreground/90">{scenario.prompt}</span>
+      </div>
+      <div className="flex flex-col gap-1.5 min-h-[88px]">
+        {scenario.steps.map((step, i) => (
+          <div
+            key={step}
+            className={`flex items-start gap-2 transition-all duration-300 ${i < visibleSteps ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}
+          >
+            <Check className="h-3 w-3 shrink-0 mt-0.5 text-emerald-400" />
+            <span className="text-foreground/70 leading-4">{step}</span>
+          </div>
+        ))}
+      </div>
+      {phase === "done" && (
+        <div className="mt-2.5 flex items-center gap-1.5 text-[10px] text-amber-400/60 border-t border-border/40 pt-2">
+          <Lock className="h-3 w-3" />
+          <span>All data processed end-to-end encrypted</span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function LandingPage() {
   const router = useRouter()
@@ -218,21 +326,32 @@ export default function LandingPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#E2E2E2] text-[#08070B]">
-      <ForceLightTheme />
-      <header className="relative z-10 border-b border-[#d4d3e6] bg-transparent">
+    <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
+      {/* Ambient background mesh */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-50"
+        aria-hidden="true"
+        style={{
+          background:
+            "radial-gradient(ellipse 80% 60% at 50% -20%, hsl(var(--accent) / 0.15) 0%, transparent 60%), radial-gradient(ellipse 60% 40% at 80% 100%, hsl(var(--brand-primary) / 0.12) 0%, transparent 50%), radial-gradient(ellipse 40% 30% at 10% 60%, hsl(var(--accent) / 0.08) 0%, transparent 40%)",
+        }}
+      />
+
+      <header className="relative z-20 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="container flex items-center justify-between gap-4 px-6 py-6">
           <Link href="/" className="flex items-center gap-3 text-lg font-semibold tracking-tight">
-            <Image src="/logo.png" alt="Umbra logo" width={40} height={40} className="mix-blend-multiply" />
+            <Image src="/logo.png" alt="Umbra logo" width={40} height={40} className="mix-blend-multiply dark:mix-blend-normal dark:invert" />
           </Link>
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             <Button
-              className="hidden h-9 rounded-full border border-[#1B0986] bg-white px-5 text-sm font-medium text-[#1B0986] transition hover:border-[#0B0870] hover:bg-white hover:text-[#0B0870] md:inline-flex"
+              className="hidden h-9 rounded-full border border-primary/60 bg-transparent px-5 text-sm font-medium text-primary transition hover:border-primary hover:bg-primary/10 md:inline-flex"
               asChild
               variant="outline"
             >
               <a href="mailto:contact@concrete-security.com">Contact</a>
             </Button>
+            <NavAuthButton />
           </div>
         </div>
       </header>
@@ -241,254 +360,284 @@ export default function LandingPage() {
         storageKey="announcement:private-beta"
       />
       <main className="relative z-10">
-        <section className="flex justify-center px-4 pt-6 pb-16 md:pt-8 md:pb-24">
-          <div className="relative w-full max-w-[900px] overflow-hidden rounded-[40px] border border-[#d4d3e6] bg-white/95 px-12 pb-16 pt-12 shadow-[0_48px_140px_-80px_rgba(11,31,102,0.45)] backdrop-blur">
-              <div className="relative z-10 flex flex-col items-center gap-6">
-                <h1 className="text-[58px] font-bold leading-[62px] text-[#08070B]">Umbra</h1>
-              </div>
-              <div className="relative flex flex-col gap-8 pt-4">
-                <div className="flex flex-col gap-6 text-center">
-                  <p className="mx-auto max-w-[520px] text-base leading-7 text-[#1F1E28]">
-                    Query your confidential documents securely. Upload sensitive files and ask questions inside a locked-down
-                    confidential workspace. Every interaction stays within a protected channel and runtime.
-                  </p>
-                </div>
-                <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-                  <div className="flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-[#1F1E28]/70">
-                    <Shield className="h-3.5 w-3.5 text-[#1B0986]" />
-                    <span>Private channel · Secure workspace</span>
-                  </div>
-                  <div className="flex w-full flex-col gap-3">
-                    <label htmlFor="hero-input" className="sr-only">
-                      Ask about your confidential files
-                    </label>
-                    <textarea
-                      id="hero-input"
-                      value={input}
-                      onChange={(event) => setInput(event.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Ask about your confidential files..."
-                      disabled={isTransitioning}
-                      className="min-h-[128px] w-full resize-none rounded-[28px] border border-[#d7d5eb] bg-white px-5 py-4 text-base leading-relaxed text-[#08070B] placeholder:text-[#1F1E28]/40 shadow-[0_26px_70px_-58px_rgba(11,31,102,0.55)] transition focus:outline-none focus:ring-2 focus:ring-[#1B0986]/45"
-                      rows={4}
-                    />
+        {/* Page title */}
+        <section className="px-4 pt-8 pb-2 md:pt-12">
+          <FadeIn direction="up" distance={24}>
+            <div className="flex flex-col items-center gap-3 text-center">
+              <h1 className="text-display-xl text-foreground">Umbra</h1>
+              <p className="mx-auto max-w-[560px] text-body-lg text-muted-foreground">
+                Confidential AI for your sensitive data. Every interaction is encrypted, attested, and verified.
+              </p>
+            </div>
+          </FadeIn>
+        </section>
 
-                    {uploadedFiles.length > 0 && (
-                      <div className="space-y-2 rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] p-3">
-                        {uploadedFiles.map((file, index) => (
-                          <div
-                            key={`${file.name}-${index}`}
-                            className="flex items-center justify-between rounded-lg border border-[#d7d5eb] bg-white px-2.5 py-2 text-xs text-[#1F1E28]"
-                          >
-                            <div className="flex items-center gap-2 overflow-hidden">
-                              <FileText className="h-3.5 w-3.5 shrink-0 text-[#1B0986]" />
-                              <span className="truncate font-medium">{file.name}</span>
-                              <span className="shrink-0 text-[#1F1E28]/65">({formatFileSize(file.size)})</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(index)}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-[#d7d5eb] text-[#1F1E28]/70 transition hover:border-[#1B0986] hover:text-[#1B0986]"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              <span className="sr-only">Remove file</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {heroNotice ? (
-                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                        {heroNotice}
-                      </div>
-                    ) : null}
-
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      multiple
-                      accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
-                      className="hidden"
-                    />
-
-                    <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-11 rounded-xl border-[#d7d5eb] bg-white text-[#1F1E28] hover:border-[#1B0986] hover:bg-white hover:text-[#1B0986] sm:w-auto"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isTransitioning}
-                      >
-                        <Paperclip className="mr-2 h-4 w-4" />
-                        Upload files
-                      </Button>
-                      <Button
-                        type="submit"
-                        className="h-12 w-full rounded-xl bg-[linear-gradient(135deg,#1B0986,#0B0870)] text-white shadow-sm transition hover:shadow-lg disabled:bg-[#1B0986]/55 disabled:text-white/75 disabled:hover:shadow-none"
-                        disabled={isTransitioning}
-                      >
-                        <Send className="mr-2 h-4 w-4" />
-                        Access Umbra Confidential Chat
-                      </Button>
+        {/* Two-column hero: Confidential Chat + Private AI Agents */}
+        <section className="px-4 pt-4 pb-16 md:pb-24">
+          <div className="container grid gap-6 md:grid-cols-2">
+            {/* Left — Confidential Chat */}
+            <FadeIn direction="up" distance={32} delay={0.05} className="md:h-full">
+              <div className="relative overflow-hidden rounded-[32px] glass-card px-8 pb-10 pt-8 shadow-hero h-full">
+                <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-inset ring-accent/20" aria-hidden="true" />
+                <div className="relative z-10 flex h-full flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                      <Shield className="h-3.5 w-3.5 text-accent" />
+                      <span>Confidential Chat</span>
                     </div>
-                    <p className="text-center text-xs text-[#1F1E28]/65">
-                      Text and files move to the confidential workspace and are sent only after secure session verification.
+                    <h2 className="text-heading-lg text-foreground">Secure Document Q&A</h2>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Upload sensitive files and ask questions inside a locked-down confidential workspace.
                     </p>
                   </div>
-                  <div className="flex flex-col gap-2 text-center">
-                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-[#1F1E28]/60">Try an example:</p>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {examplePrompts.map((example) => {
-                      const isSelected = selectedExampleId === example.id
+                  <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                    <div className="flex w-full flex-col gap-3">
+                      <label htmlFor="hero-input" className="sr-only">
+                        Ask about your confidential files
+                      </label>
+                      <textarea
+                        id="hero-input"
+                        value={input}
+                        onChange={(event) => setInput(event.target.value)}
+                        onKeyDown={handleKeyDown}
+                        placeholder="Ask about your confidential files..."
+                        disabled={isTransitioning}
+                        className="min-h-[100px] w-full resize-none rounded-2xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 shadow-card transition focus:outline-none focus:ring-2 focus:ring-accent/45"
+                        rows={3}
+                      />
 
-                      return (
-                        <button
-                          key={example.id}
+                      {uploadedFiles.length > 0 && (
+                        <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-3">
+                          {uploadedFiles.map((file, index) => (
+                            <div
+                              key={`${file.name}-${index}`}
+                              className="flex items-center justify-between rounded-lg border border-border bg-card px-2.5 py-2 text-xs text-foreground"
+                            >
+                              <div className="flex items-center gap-2 overflow-hidden">
+                                <FileText className="h-3.5 w-3.5 shrink-0 text-primary" />
+                                <span className="truncate font-medium">{file.name}</span>
+                                <span className="shrink-0 text-muted-foreground">({formatFileSize(file.size)})</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => removeFile(index)}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:border-primary hover:text-primary"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                <span className="sr-only">Remove file</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {heroNotice ? (
+                        <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                          {heroNotice}
+                        </div>
+                      ) : null}
+
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileUpload}
+                        multiple
+                        accept=".txt,.md,.json,.csv,.py,.js,.ts,.tsx,.jsx,.html,.css,.xml,.yaml,.yml,.pdf"
+                        className="hidden"
+                      />
+
+                      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center">
+                        <Button
                           type="button"
-                          onClick={() => handleExampleClick(example)}
+                          variant="outline"
+                          className="h-10 rounded-xl border-border bg-card text-foreground hover:border-primary hover:bg-card hover:text-primary sm:w-auto"
+                          onClick={() => fileInputRef.current?.click()}
                           disabled={isTransitioning}
-                          className={[
-                              "relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs overflow-hidden transition",
-                            isSelected
-                              ? "border-transparent"
-                              : "border-[#d7d5eb] bg-white/80 text-[#1F1E28]/80 hover:bg-white hover:text-[#08070B]",
-                          ].join(" ")}
-                          >
-                            {/* Fill layer: left -> right */}
-                            {isSelected && (
-                              <span
-                                aria-hidden="true"
-                                className="absolute inset-0 example-fill z-0"
-                                style={{ transform: "scaleX(1)" }}
-                              />
-                            )}
-
-                          <span className="relative z-10 inline-flex items-center gap-1.5">
-                            <FileText className="h-3 w-3" />
-
-                            <span className="relative inline-block">
-                              {/* Base text */}
-                              <span className="text-[#08070B]">{example.buttonLabel}</span>
-
-                              {/* White text overlay (no icon here) */}
+                        >
+                          <Paperclip className="mr-2 h-4 w-4" />
+                          Upload files
+                        </Button>
+                        <Button
+                          type="submit"
+                          className="h-10 w-full rounded-xl bg-primary text-primary-foreground shadow-sm transition hover:bg-primary/90 hover:shadow-glow-primary disabled:bg-primary/55 disabled:text-primary-foreground/75 disabled:hover:shadow-none"
+                          disabled={isTransitioning}
+                        >
+                          <Send className="mr-2 h-4 w-4" />
+                          Open Chat
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2 text-center">
+                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">Try an example:</p>
+                      <div className="flex flex-wrap justify-center gap-2">
+                        {examplePrompts.map((example) => {
+                          const isSelected = selectedExampleId === example.id
+                          return (
+                            <button
+                              key={example.id}
+                              type="button"
+                              onClick={() => handleExampleClick(example)}
+                              disabled={isTransitioning}
+                              className={[
+                                "relative inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs overflow-hidden transition",
+                                isSelected
+                                  ? "border-transparent"
+                                  : "border-border bg-card/80 text-muted-foreground hover:bg-card hover:text-foreground",
+                              ].join(" ")}
+                            >
                               {isSelected && (
                                 <span
                                   aria-hidden="true"
-                                  className="absolute inset-0 text-white pointer-events-none overflow-hidden"
-                                  style={{ clipPath: "inset(0 0 0 0)" }}
-                                >
-                                  {example.buttonLabel}
-                                </span>
+                                  className="absolute inset-0 example-fill z-0"
+                                  style={{ transform: "scaleX(1)" }}
+                                />
                               )}
-                            </span>
-                          </span>
-                          </button>
-                        )
-                    })}
+                              <span className="relative z-10 inline-flex items-center gap-1.5">
+                                <FileText className="h-3 w-3" />
+                                <span className="relative inline-block">
+                                  <span className="text-foreground">{example.buttonLabel}</span>
+                                  {isSelected && (
+                                    <span
+                                      aria-hidden="true"
+                                      className="absolute inset-0 text-white pointer-events-none overflow-hidden"
+                                      style={{ clipPath: "inset(0 0 0 0)" }}
+                                    >
+                                      {example.buttonLabel}
+                                    </span>
+                                  )}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
+                    <div className="flex items-center justify-center gap-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-3.5 w-3.5 text-accent" />
+                        <span>Encrypted</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-3.5 w-3.5 text-accent" />
+                        <span>Attested</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Fingerprint className="h-3.5 w-3.5 text-accent" />
+                        <span>Verified</span>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </FadeIn>
+
+            {/* Right — Private AI Agents */}
+            <FadeIn direction="up" distance={32} delay={0.15} className="md:h-full">
+              <div className="relative overflow-hidden rounded-[32px] glass-card px-8 pb-10 pt-8 shadow-hero h-full">
+                <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-inset ring-amber-500/20" aria-hidden="true" />
+                <div className="relative z-10 flex h-full flex-col gap-6">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-amber-400">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Coming Soon</span>
+                    </div>
+                    <h2 className="text-heading-lg text-foreground">Private AI Agents</h2>
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      Deploy autonomous AI agents that keep your data confidential. Private by design, verified by cryptography.
+                    </p>
                   </div>
-                  <div className="flex items-center justify-center gap-4 text-xs text-[#1F1E28]/70">
-                    <div className="flex items-center gap-2">
-                      <Lock className="h-3.5 w-3.5 text-[#1F1E28]" />
-                      <span>Encrypted</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Shield className="h-3.5 w-3.5 text-[#1F1E28]" />
-                      <span>Attested</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Fingerprint className="h-3.5 w-3.5 text-[#1F1E28]" />
-                      <span>Verified</span>
-                    </div>
+
+                  <AgentDemo />
+
+                  <div className="mt-auto pt-2">
+                    <Button
+                      className="h-10 w-full rounded-xl bg-amber-500 text-sm font-medium text-white shadow-sm transition hover:bg-amber-400"
+                      asChild
+                    >
+                      <Link href="/personal-agents">
+                        Join the waitlist
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
                   </div>
-                </form>
-            </div>
+                </div>
+              </div>
+            </FadeIn>
           </div>
         </section>
 
-        <section className="px-4 pb-20" id="how-it-works">
-          <div className="container flex flex-col gap-10">
-            <div className="max-w-[720px] space-y-4">
-              <span className="text-xs uppercase tracking-[0.4em] text-[#1F1E28]/70">How It Works</span>
-              <h2 className="text-[34px] font-semibold leading-[38px] text-[#08070B]">
-                Confidential Chat with Cryptographic Guarantees
-              </h2>
-              <p className="text-base leading-6 text-[#1F1E28]">
-                Umbra is a Confidential Chat that allows you to query documents with cryptographic guarantees. Your data
-                is encrypted client-side in the browser, and the machine processing your queries is verified through
-                cryptographic means. Umbra relies on Trusted Execution Environments (TEE) to ensure your sensitive
-                documents remain private throughout the entire process.
-              </p>
-            </div>
-          </div>
-        </section>
-
+        {/* Security flow */}
         <section className="px-4 pb-20" id="security-flow">
           <div className="container flex flex-col gap-6">
-            <div className="max-w-[760px] space-y-3">
-              <span className="text-xs uppercase tracking-[0.4em] text-[#1F1E28]/70">Security Flow</span>
-              <h2 className="text-[30px] font-semibold leading-[34px] text-[#08070B] md:text-[34px] md:leading-[38px]">
-                End-to-End Protection at a Glance
-              </h2>
-              <p className="text-base leading-6 text-[#1F1E28]">
-                One rule matters most: plaintext exists only inside the attested TEE.
-              </p>
-            </div>
-            <div className="rounded-[28px] border border-[#d4d3e6] bg-white p-5 shadow-[0_30px_90px_-76px_rgba(15,10,80,0.45)] md:p-6">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#1F1E28]/70">
-                <span className="rounded-full border border-[#BFD5FF] bg-[#EAF1FF] px-3 py-1 text-[#103B80]">Browser</span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
-                <span className="rounded-full border border-[#BCE9D0] bg-[#E8F8EF] px-3 py-1 text-[#17633B]">
-                  Attested TEE
-                </span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#1B0986]" />
-                <span className="rounded-full border border-[#D7D5EB] bg-[#F5F4FB] px-3 py-1 text-[#312A57]">Browser</span>
+            <FadeIn direction="up">
+              <div className="max-w-[760px] space-y-3">
+                <span className="text-overline uppercase tracking-[0.4em] text-muted-foreground">How It Works</span>
+                <h2 className="text-heading-lg text-foreground">
+                  End-to-End Protection at a Glance
+                </h2>
+                <p className="text-body-lg text-muted-foreground">
+                  One rule matters most: plaintext exists only inside the attested TEE.
+                </p>
               </div>
-
-              <p className="mt-4 text-sm leading-6 text-[#1F1E28]">
-                <span className="font-semibold text-[#08070B]">Key guarantee:</span> your data is encrypted in transit
-                and only decrypted inside the verified enclave.
-              </p>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                {securityQuickSteps.map((step) => {
-                  const Icon = step.icon
-                  return (
-                    <div key={step.title} className="rounded-2xl border border-[#d7d5eb] bg-[#FAFAFF] px-4 py-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1B0986]">
-                        <Icon className="h-4 w-4 text-white" />
-                      </div>
-                      <h3 className="mt-3 text-sm font-semibold text-[#08070B]">{step.title}</h3>
-                      <p className="mt-1 text-xs leading-5 text-[#1F1E28]/80">{step.description}</p>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {securityQuickGuarantees.map((item) => (
-                  <span
-                    key={item}
-                    className="inline-flex rounded-full border border-[#d7d5eb] bg-white px-3 py-1 text-xs font-medium text-[#1F1E28]/80"
-                  >
-                    {item}
+            </FadeIn>
+            <FadeIn direction="up" delay={0.1}>
+              <div className="rounded-[28px] glass-card p-5 shadow-card md:p-6">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="rounded-full border border-info/30 bg-info/10 px-3 py-1 text-info">Browser</span>
+                  <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                  <span className="rounded-full border border-success/30 bg-success/10 px-3 py-1 text-success">
+                    Attested TEE
                   </span>
-                ))}
+                  <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                  <span className="rounded-full border border-border bg-muted/30 px-3 py-1 text-foreground">Browser</span>
+                </div>
+
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">
+                  <span className="font-semibold text-foreground">Key guarantee:</span> your data is encrypted in transit
+                  and only decrypted inside the verified enclave.
+                </p>
+
+                <StaggerChildren stagger={0.1} className="mt-4 grid gap-3 md:grid-cols-3">
+                  {securityQuickSteps.map((step) => {
+                    const Icon = step.icon
+                    return (
+                      <div key={step.title} className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+                          <Icon className="h-4 w-4 text-primary-foreground" />
+                        </div>
+                        <h3 className="mt-3 text-sm font-semibold text-foreground">{step.title}</h3>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{step.description}</p>
+                      </div>
+                    )
+                  })}
+                </StaggerChildren>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {securityQuickGuarantees.map((item) => (
+                    <span
+                      key={item}
+                      className="inline-flex rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            </FadeIn>
           </div>
         </section>
       </main>
-      <footer className="relative z-10 border-t border-[#d4d3e6] bg-transparent">
-        <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-[#1F1E28]/70 md:flex-row md:items-center md:justify-between">
+      <footer className="relative z-10 border-t border-border/60 bg-background/80 backdrop-blur-md">
+        <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Umbra.</p>
           <div className="flex flex-wrap gap-4">
-            <Link className="transition hover:text-[#1B0986]" href="/confidential-ai">
+            <Link className="transition hover:text-primary" href="/confidential-ai">
               Confidential Chat
             </Link>
-            <a className="transition hover:text-[#1B0986]" href="mailto:contact@concrete-security.com">
+            <Link className="transition hover:text-primary" href="/personal-agents">
+              Private AI Agents
+            </Link>
+            <a className="transition hover:text-primary" href="mailto:contact@concrete-security.com">
               Contact
             </a>
           </div>

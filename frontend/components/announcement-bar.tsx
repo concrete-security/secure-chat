@@ -31,11 +31,11 @@ export default function AnnouncementBar({
     <div
       role="region"
       aria-label="Site announcement"
-      className="w-full border-b border-[#1B0986]/20 bg-primary/5 backdrop-blur-sm"
+      className="w-full border-b border-accent/15 bg-accent/5 backdrop-blur-sm"
     >
       <div className="relative mx-auto max-w-[1200px] px-6 py-3">
         <div className="flex items-center justify-center gap-3 text-center text-[15px]">
-          <span className="text-[#08070B]">{message}</span>
+          <span className="text-foreground">{message}</span>
           {ctaHref && ctaLabel && (
             <Link href={ctaHref} className="inline-flex">
               <Button size="sm" className="h-8 px-3">
@@ -51,7 +51,7 @@ export default function AnnouncementBar({
             localStorage.setItem(storageKey, "1")
             setHidden(true)
           }}
-          className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-[#1F1E28] transition hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(201,198,245,0.9)]"
+          className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <X className="size-4" />
         </button>
@@ -59,5 +59,3 @@ export default function AnnouncementBar({
     </div>
   )
 }
-
-

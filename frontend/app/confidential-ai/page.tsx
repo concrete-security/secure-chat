@@ -4,6 +4,7 @@ import { useState, FormEvent, KeyboardEvent, useMemo, useRef, useEffect, useCall
 
 import Link from "next/link"
 import Image from "next/image"
+import { useRouter } from "next/navigation"
 import {
   ArrowDown,
   Send,
@@ -26,6 +27,8 @@ import {
   ExternalLink,
   Terminal,
   Settings2,
+  LogOut,
+  Home,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -97,10 +100,6 @@ type AtlsLogEntry = {
 }
 
 const PROVIDER_SETTINGS_STORAGE_KEY = "confidential-provider-settings-v1"
-const GUEST_USAGE_STORAGE_KEY = "confidential-chat-guest-used"
-const GUEST_ACTIVE_SESSION_KEY = "confidential-chat-guest-active"
-const GUEST_LIMITS_ENABLED = process.env.NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS === "true"
-
 function normalize(value?: string | null): string | null {
   if (!value) return null
   const trimmed = value.trim()
@@ -207,10 +206,11 @@ function ConfidentialAIContent() {
       return null
     }
   }, [])
+  const router = useRouter()
   const [authState, setAuthState] = useState<"loading" | "signed-in" | "signed-out">(supabase ? "loading" : "signed-out")
   const [authUserEmail, setAuthUserEmail] = useState<string | null>(null)
-  const [guestUsageRestricted, setGuestUsageRestricted] = useState(false)
-  const [guestNotice, setGuestNotice] = useState<string | null>(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
   const [atlsState, setAtlsState] = useState<AtlsConnectionState>({ status: "disconnected" })
   const atlasFetchRef = useRef<typeof fetch | null>(null)
   const [proofDetailsModalOpen, setProofDetailsModalOpen] = useState(false)
@@ -273,9 +273,6 @@ function ConfidentialAIContent() {
     modelDisplayLabel && providerModel && modelDisplayLabel !== providerModel ? providerModel : undefined
   const providerConfigured = Boolean(providerApiBase)
   const tokenPresent = providerApiKeyInput.trim().length > 0
-  const guestLimitsEnabled = Boolean(supabase) && GUEST_LIMITS_ENABLED
-  const guestRestrictionActive = guestLimitsEnabled && authState === "signed-out" && guestUsageRestricted
-
   const [messages, setMessages] = useState<Message[]>(() => [
     {
       role: "assistant",
@@ -299,19 +296,19 @@ function ConfidentialAIContent() {
         ? "Verification failed. Reconnect from Proof of Confidentiality."
         : "Configure provider and complete attestation to enable secure messaging."
   const secureWorkspaceDotClass = secureChannelReady
-    ? "bg-emerald-500"
+    ? "bg-brand-primary"
     : atlsState.status === "connecting"
-      ? "bg-sky-500 animate-pulse"
+      ? "bg-brand-primary/50 animate-pulse"
       : atlsState.status === "error"
-        ? "bg-rose-500"
-        : "bg-slate-400"
+        ? "bg-destructive"
+        : "bg-muted-foreground/50"
   const secureWorkspaceTextClass = secureChannelReady
-    ? "text-emerald-700 dark:text-emerald-300"
+    ? "text-brand-primary"
     : atlsState.status === "connecting"
-      ? "text-sky-700 dark:text-sky-300"
+      ? "text-brand-primary/60"
       : atlsState.status === "error"
-        ? "text-rose-700 dark:text-rose-300"
-        : "text-slate-700 dark:text-slate-300"
+        ? "text-destructive"
+        : "text-muted-foreground"
   const [composerNotice, setComposerNotice] = useState<{ type: "error" | "info"; message: string } | null>(null)
   const [confirmNewConversation, setConfirmNewConversation] = useState(false)
   const [pendingDemoSend, setPendingDemoSend] = useState<SendMessageOverride | null>(null)
@@ -322,11 +319,11 @@ function ConfidentialAIContent() {
   const sendMessageRef = useRef<(override?: SendMessageOverride) => Promise<void>>(async () => {})
 
   const sidebarIconButtonClass =
-    "h-8 w-8 rounded-full border border-border/50 bg-white/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/35 hover:bg-white hover:text-foreground dark:border-white/15 dark:bg-[#101D3A] dark:text-slate-100 dark:hover:border-brand-primary/60 dark:hover:bg-[#162B57] dark:hover:text-white"
+    "h-8 w-8 rounded-full border border-border/50 bg-card/70 text-muted-foreground shadow-sm transition hover:border-brand-primary/50 hover:bg-card hover:text-foreground"
   const sidebarSessionButtonClass =
-    "gap-2 border-border/50 bg-card/50 text-foreground shadow-sm transition hover:bg-card/80 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:bg-white/[0.1] dark:hover:text-white"
+    "gap-2 border-border/50 bg-card/50 text-foreground shadow-sm transition hover:bg-card/80 hover:text-foreground"
   const proofActionButtonClass =
-    "rounded-full border-border/50 bg-card/70 font-semibold text-foreground shadow-sm transition hover:border-brand-primary/45 hover:bg-brand-primary/10 hover:text-foreground dark:border-white/15 dark:bg-white/[0.04] dark:text-slate-100 dark:hover:border-brand-primary/55 dark:hover:bg-brand-primary/20 dark:hover:text-white"
+    "rounded-full border-border/50 bg-card/70 font-semibold text-foreground shadow-sm transition hover:border-brand-primary/45 hover:bg-brand-primary/10 hover:text-foreground"
 
   const applySupabaseSession = useCallback(
     (sessionUserEmail: string | null) => {
@@ -387,43 +384,26 @@ function ConfidentialAIContent() {
   }, [applySupabaseSession, supabase])
 
   useEffect(() => {
-    if (!guestLimitsEnabled) {
-      setGuestUsageRestricted(false)
-      setGuestNotice(null)
-      return
-    }
-
-    if (authState === "loading") {
-      return
-    }
-
-    if (authState === "signed-in") {
-      setGuestUsageRestricted(false)
-      setGuestNotice(null)
-      try {
-        sessionStorage.removeItem(GUEST_ACTIVE_SESSION_KEY)
-      } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("Failed to reset guest session flag", error)
-        }
+    if (!userMenuOpen) return
+    function handleClickOutside(e: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
       }
-      return
     }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [userMenuOpen])
 
+  const handleSignOut = useCallback(async () => {
+    if (!supabase) return
+    setUserMenuOpen(false)
     try {
-      const alreadyUsed = localStorage.getItem(GUEST_USAGE_STORAGE_KEY)
-      const activeSession = sessionStorage.getItem(GUEST_ACTIVE_SESSION_KEY)
-      const locked = Boolean(alreadyUsed && !activeSession)
-      setGuestUsageRestricted(locked)
-      setGuestNotice(
-        locked ? "You've already used your guest confidential session. Sign in to continue." : null
-      )
+      await supabase.auth.signOut()
+      router.replace("/sign-in")
     } catch (error) {
-      console.warn("Failed to resolve guest usage state", error)
-      setGuestUsageRestricted(false)
-      setGuestNotice(null)
+      console.error("Failed to sign out", error)
     }
-  }, [authState, guestLimitsEnabled])
+  }, [supabase, router])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -762,7 +742,7 @@ function ConfidentialAIContent() {
       switch (atlsState.status) {
         case "connected":
           return (
-            <div className={cn(badgeBase, "border-[#1BAF9F]/60 bg-[#1BAF9F]/10 text-[#037C6A]")}>
+            <div className={cn(badgeBase, "border-success/60 bg-success/10 text-success")}>
               <CheckCircle2 className="h-3.5 w-3.5" /> Connected
             </div>
           )
@@ -774,7 +754,7 @@ function ConfidentialAIContent() {
           )
         case "error":
           return (
-            <div className={cn(badgeBase, "border-rose-400/60 bg-rose-400/10 text-rose-600")}>
+            <div className={cn(badgeBase, "border-destructive/60 bg-destructive/10 text-destructive")}>
               <X className="h-3.5 w-3.5" /> Error
             </div>
           )
@@ -821,11 +801,11 @@ function ConfidentialAIContent() {
     const renderChecklistIcon = (state: ChecklistState) => {
       switch (state) {
         case "ok":
-          return <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          return <CheckCircle2 className="h-4 w-4 text-success" />
         case "running":
           return <Sparkles className="h-4 w-4 text-brand-primary animate-pulse" />
         case "error":
-          return <X className="h-4 w-4 text-rose-600" />
+          return <X className="h-4 w-4 text-destructive" />
         default:
           return <Circle className="h-4 w-4 text-muted-foreground" />
       }
@@ -841,8 +821,8 @@ function ConfidentialAIContent() {
                 className={cn(
                   "flex items-center gap-2 rounded-2xl border px-3 py-2.5 shadow-sm",
                   isVerified
-                    ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-600 dark:border-emerald-400/40 dark:bg-emerald-400/5"
-                    : "border-rose-400/60 bg-rose-400/10 text-rose-600 dark:border-rose-400/40 dark:bg-rose-400/5"
+                    ? "border-success/40 bg-success/10 text-success"
+                    : "border-destructive/40 bg-destructive/10 text-destructive"
                 )}
               >
                 {isVerified ? (
@@ -864,7 +844,7 @@ function ConfidentialAIContent() {
           return (
             <div
               className={cn(
-                "rounded-2xl border border-border/40 bg-card/70 px-3 py-2 text-muted-foreground shadow-sm dark:border-border/60 dark:bg-card/20",
+                "rounded-2xl border border-border/40 bg-card/70 px-3 py-2 text-muted-foreground shadow-sm",
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
@@ -875,7 +855,7 @@ function ConfidentialAIContent() {
         case "error":
           return (
             <div className={cn("space-y-2", isCompact ? "text-xs" : "text-sm")}>
-              <div className="border-l-2 border-rose-400 pl-3 text-rose-700 dark:text-rose-300">
+              <div className="border-l-2 border-destructive pl-3 text-destructive">
                 <div className="font-medium">{atlsState.error}</div>
                 {atlsState.hint && (
                   <div className="mt-1 text-muted-foreground text-[11px]">
@@ -889,7 +869,7 @@ function ConfidentialAIContent() {
           return (
             <div
               className={cn(
-                "rounded-2xl border border-border/40 bg-card/60 px-3 py-2 text-muted-foreground dark:border-border/60 dark:bg-card/15",
+                "rounded-2xl border border-border/40 bg-card/60 px-3 py-2 text-muted-foreground",
                 isCompact ? "text-xs" : "text-sm"
               )}
             >
@@ -916,7 +896,7 @@ function ConfidentialAIContent() {
           </div>
           <p className={cn("text-muted-foreground w-full", isCompact ? "text-[11px]" : "text-sm")}>{connectionCopy}</p>
         </div>
-        <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/15">
+        <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm">
           <p className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground/80 mb-2">
             Security checklist
           </p>
@@ -975,7 +955,7 @@ function ConfidentialAIContent() {
 
     return (
       <Dialog open={proofDetailsModalOpen} onOpenChange={setProofDetailsModalOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border border-border/50 bg-background/95 backdrop-blur dark:border-border/60 dark:bg-background/80">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border border-border/50 bg-background/95 backdrop-blur">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <ShieldCheck className="h-5 w-5 text-brand-primary" />
@@ -984,19 +964,19 @@ function ConfidentialAIContent() {
           </DialogHeader>
           <div className="space-y-4">
             {/* Verification Status - moved to top */}
-            <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm dark:border-border/60 dark:bg-card/10">
+            <div className="rounded-2xl border border-border/40 bg-card/70 p-3 shadow-sm">
               <div className="flex items-center gap-2">
                 {atlsState.attestation.trusted ? (
                   <>
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    <span className="text-sm font-medium text-emerald-600">
+                    <CheckCircle2 className="h-4 w-4 text-success" />
+                    <span className="text-sm font-medium text-success">
                       Connection attested and verified
                     </span>
                   </>
                 ) : (
                   <>
-                    <X className="h-4 w-4 text-rose-600" />
-                    <span className="text-sm font-medium text-rose-600">
+                    <X className="h-4 w-4 text-destructive" />
+                    <span className="text-sm font-medium text-destructive">
                       Security verification failed
                     </span>
                   </>
@@ -1012,7 +992,7 @@ function ConfidentialAIContent() {
             {/* TEE Information */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-foreground">TEE Information</h3>
-              <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
+              <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm ">
                 <dl className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <dt className="text-muted-foreground">TEE Type</dt>
@@ -1034,7 +1014,7 @@ function ConfidentialAIContent() {
             {(policy.os_image_hash || policy.expected_bootchain) && (
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-foreground">VM & OS Measurements</h3>
-                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
+                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm ">
                   <dl className="space-y-3 text-sm">
                     {policy.os_image_hash && (
                       <div>
@@ -1095,7 +1075,7 @@ function ConfidentialAIContent() {
             {services.length > 0 && (
               <div className="space-y-3">
                 <h3 className="text-sm font-semibold text-foreground">Verified Container Images</h3>
-                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm dark:border-border/60 dark:bg-card/20">
+                <div className="rounded-2xl border border-border/40 bg-card/80 p-3 shadow-sm ">
                   <ul className="space-y-4">
                     {services.map((service) => {
                       const imageUrl = getImageUrl(service.image, service.digest)
@@ -1140,7 +1120,7 @@ function ConfidentialAIContent() {
                     </div>
                   </AccordionTrigger>
                   <AccordionContent>
-                    <div className="rounded-lg border border-border/40 bg-zinc-950 dark:bg-zinc-900 overflow-hidden">
+                    <div className="rounded-lg border border-border/40 bg-zinc-950 overflow-hidden">
                       <div className="max-h-[200px] overflow-y-auto p-3 font-mono text-xs">
                         {atlsLogs.map((log, index) => (
                           <div key={index} className="flex gap-2 py-0.5">
@@ -1198,9 +1178,6 @@ function ConfidentialAIContent() {
 
   // Upload files
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (guestRestrictionActive) {
-      return
-    }
     const files = event.target.files
     if (!files) return
 
@@ -1631,10 +1608,6 @@ function ConfidentialAIContent() {
       setComposerNotice({ type: "info", message: "Wait for secure session verification before sending." })
       return
     }
-    if (guestRestrictionActive) {
-      setGuestNotice("You've already used your guest confidential session. Sign in to continue.")
-      return
-    }
     const rawText = override?.text ?? input
     const activeFiles = override?.files ?? uploadedFiles
     const text = rawText.trim()
@@ -1645,19 +1618,6 @@ function ConfidentialAIContent() {
       setComposerNotice({ type: "error", message: "Session setup is incomplete. Add your provider URL first." })
       setSessionDialogOpen(true)
       return
-    }
-
-    if (guestLimitsEnabled && authState !== "signed-in") {
-      try {
-        sessionStorage.setItem(GUEST_ACTIVE_SESSION_KEY, "1")
-        localStorage.setItem(GUEST_USAGE_STORAGE_KEY, new Date().toISOString())
-        setGuestUsageRestricted(false)
-        setGuestNotice(null)
-      } catch (error) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("Failed to persist guest usage state", error)
-        }
-      }
     }
 
     const trimmedToken = providerApiKeyInput.trim()
@@ -1795,18 +1755,8 @@ function ConfidentialAIContent() {
       pendingDemoSend: true,
       secureChannelReady,
       providerConfigured: Boolean(providerApiBase),
-      guestRestricted: guestRestrictionActive,
+      guestRestricted: false,
       isSending,
-    }
-
-    if (guestRestrictionActive) {
-      setComposerNotice((previous) =>
-        previous ?? {
-          type: "info",
-          message: "Demo is preloaded. Sign in to send this request securely.",
-        }
-      )
-      return
     }
 
     if (!providerApiBase) {
@@ -1825,7 +1775,6 @@ function ConfidentialAIContent() {
     setPendingDemoSend(null)
     void sendMessageRef.current(nextSend)
   }, [
-    guestRestrictionActive,
     isSending,
     pendingDemoSend,
     providerApiBase,
@@ -1906,13 +1855,13 @@ function ConfidentialAIContent() {
   }, [updateAutoScrollEnabled])
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#E8E7F0] text-foreground dark:bg-[#050C1B]">
+    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       <main className="flex flex-1 flex-col min-h-0">
         <section className="relative flex h-full w-full flex-1 flex-col md:flex-row" aria-label="Confidential space">
           <aside
             className={cn(
-              "flex flex-col border-border/40 bg-white/95 transition-[opacity,transform,width] duration-200 dark:border-white/10 dark:bg-[#0C1832]/95 md:border-border/40 md:bg-white/85 md:dark:bg-[#0C1832]/84",
-              "fixed inset-y-0 left-0 z-40 h-[100dvh] w-[min(360px,90vw)] overflow-y-auto border-r shadow-[0_20px_60px_-25px_rgba(5,3,15,0.85)] md:static md:h-full md:w-auto md:flex-none md:border-b-0 md:border-r md:shadow-none",
+              "flex flex-col border-border/40 bg-card/95 transition-[opacity,transform,width] duration-200 md:border-border/40 md:bg-card/85",
+              "fixed inset-y-0 left-0 z-40 h-[100dvh] w-[min(360px,90vw)] overflow-y-auto border-r shadow-elevated md:static md:h-full md:w-auto md:flex-none md:border-b-0 md:border-r md:shadow-none",
               sidebarOpen
                 ? "translate-x-0 opacity-100 pointer-events-auto gap-6 p-5 sm:p-6 md:p-4 md:w-full md:max-w-[320px]"
                 : "-translate-x-full opacity-0 pointer-events-none md:translate-x-0 md:opacity-100 md:pointer-events-auto md:w-[56px] md:items-center md:justify-between md:px-2 md:py-4"
@@ -1962,7 +1911,7 @@ function ConfidentialAIContent() {
                         onClick={() => setSessionDialogOpen(true)}
                         title="Settings"
                       >
-                        <Settings2 className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
+                        <Settings2 className="h-3.5 w-3.5 text-primary" />
                         <span className="text-xs">Settings</span>
                       </Button>
                       <Button
@@ -1974,7 +1923,7 @@ function ConfidentialAIContent() {
                         disabled={!hasConversationHistory}
                         title="Download JSON"
                       >
-                        <Save className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
+                        <Save className="h-3.5 w-3.5 text-primary" />
                         <span className="text-xs">Save</span>
                       </Button>
                       <Button
@@ -1985,7 +1934,7 @@ function ConfidentialAIContent() {
                         onClick={handleStartNewConversation}
                         disabled={isSending || isStreaming}
                       >
-                        <MessageSquarePlus className="h-3.5 w-3.5 text-brand-primary dark:text-sky-300" />
+                        <MessageSquarePlus className="h-3.5 w-3.5 text-primary" />
                         <span className="text-xs">New</span>
                       </Button>
                     </div>
@@ -1995,14 +1944,14 @@ function ConfidentialAIContent() {
                 <Accordion type="single" collapsible>
                   <AccordionItem value="proof" className="border-none">
                     <AccordionTrigger
-                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-brand-primary/60 bg-[linear-gradient(130deg,hsl(var(--brand-primary)/0.18),hsl(var(--brand-secondary)/0.42))] px-4 py-3 text-left text-sm font-semibold uppercase tracking-[0.24em] text-white shadow-[0_18px_35px_-24px_rgba(16,42,140,0.9)] transition hover:brightness-110 data-[state=open]:brightness-110 dark:border-brand-primary dark:bg-[linear-gradient(130deg,rgba(16,42,140,0.32),rgba(11,31,102,0.45))]"
+                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-brand-primary/60 bg-brand-gradient px-4 py-3 text-left text-sm font-semibold uppercase tracking-[0.24em] text-white shadow-glow-primary transition hover:brightness-110 data-[state=open]:brightness-110"
                     >
                       <span className="inline-flex items-center gap-2 text-[11px]">
                         <ShieldCheck className="h-4 w-4" />
                         Proof of Confidentiality
                       </span>
                     </AccordionTrigger>
-                    <AccordionContent className="mt-3 space-y-3 rounded-2xl border border-brand-primary/30 bg-[linear-gradient(135deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.12))] p-4 shadow-sm dark:border-brand-primary/40 dark:bg-[linear-gradient(135deg,rgba(16,42,140,0.18),rgba(11,31,102,0.28))]">
+                    <AccordionContent className="mt-3 space-y-3 rounded-2xl border border-brand-primary/30 bg-brand-primary/10 p-4 shadow-sm">
                       <AtlsProofContent
                         variant="sidebar"
                         onViewDetails={() => setProofDetailsModalOpen(true)}
@@ -2018,7 +1967,7 @@ function ConfidentialAIContent() {
                       href="/"
                       className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
                     >
-                      <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
+                      <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0 dark:invert" />
                     </Link>
                   </div>
                 </div>
@@ -2037,7 +1986,7 @@ function ConfidentialAIContent() {
                     <span className="sr-only">Expand panel</span>
                   </Button>
                 </div>
-                <div className="flex flex-col items-center gap-3 text-muted-foreground dark:text-slate-300">
+                <div className="flex flex-col items-center gap-3 text-muted-foreground">
                   <Lock className="h-5 w-5 text-brand-accent" />
                   <span className="text-[10px] font-semibold uppercase tracking-[0.4em] [writing-mode:vertical-rl] [text-orientation:mixed]">
                     Confidential
@@ -2047,7 +1996,7 @@ function ConfidentialAIContent() {
                   href="/"
                   className="inline-flex items-center justify-center whitespace-nowrap transition-opacity hover:opacity-80"
                 >
-                  <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0" />
+                  <Image src="/logo.png" alt="Confidential AI logo" width={20} height={20} className="shrink-0 dark:invert" />
                 </Link>
               </div>
             )}
@@ -2058,7 +2007,7 @@ function ConfidentialAIContent() {
               type="button"
               aria-label="Close confidential tools"
               onClick={() => setSidebarOpen(false)}
-              className="fixed inset-0 z-30 bg-[#08070B]/40 backdrop-blur-[2px] transition-opacity md:hidden"
+              className="fixed inset-0 z-30 bg-background/40 backdrop-blur-[2px] transition-opacity md:hidden"
             />
           ) : null}
 
@@ -2068,7 +2017,7 @@ function ConfidentialAIContent() {
               variant="ghost"
               size="icon"
               onClick={() => setSidebarOpen(true)}
-              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-white/90 text-muted-foreground shadow-md backdrop-blur transition hover:bg-white md:hidden dark:border-white/15 dark:bg-[#0F1A37]/92 dark:text-slate-100 dark:hover:bg-[#13254E]"
+              className="fixed left-4 top-[calc(env(safe-area-inset-top,0)+16px)] z-30 rounded-full border border-border/50 bg-card/90 text-muted-foreground shadow-md backdrop-blur transition hover:bg-card md:hidden"
             >
               <PanelLeftOpen className="h-4 w-4" />
               <span className="sr-only">Open confidential tools</span>
@@ -2076,8 +2025,8 @@ function ConfidentialAIContent() {
           ) : null}
 
           <div className="flex flex-1 min-h-0 px-3 pb-3 pt-[calc(env(safe-area-inset-top,0)+56px)] sm:px-5 sm:pb-5 sm:pt-3">
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/25 bg-[linear-gradient(155deg,hsl(var(--brand-primary)/0.08),hsl(var(--brand-secondary)/0.14))] shadow-[0_24px_60px_-36px_rgba(8,7,11,0.8)] dark:border-[#365082]/45 dark:bg-[linear-gradient(158deg,rgba(10,22,47,0.94),rgba(7,16,35,0.95))]">
-              <div className="shrink-0 border-b border-brand-primary/20 bg-white/80 px-4 py-3 backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0E1935]/84 sm:px-6">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[26px] border border-brand-primary/40 bg-card/90 shadow-elevated">
+              <div className="shrink-0 border-b border-border/60 bg-card/80 px-4 py-3 backdrop-blur sm:px-6">
                 <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className={cn("h-2.5 w-2.5 rounded-full", secureWorkspaceDotClass)} />
@@ -2085,9 +2034,47 @@ function ConfidentialAIContent() {
                       {secureWorkspaceLabel}
                     </p>
                   </div>
-                  <div className="inline-flex self-start items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary sm:self-auto">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    <span>Private</span>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <div className="inline-flex items-center gap-1.5 rounded-full border border-brand-primary/30 bg-brand-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-primary">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <span>Private</span>
+                    </div>
+                    {authState === "signed-in" && authUserEmail ? (
+                      <div className="relative" ref={userMenuRef}>
+                        <button
+                          type="button"
+                          onClick={() => setUserMenuOpen((prev) => !prev)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary/20 text-xs font-semibold text-brand-primary transition hover:bg-brand-primary/30"
+                          title={authUserEmail}
+                        >
+                          {authUserEmail[0].toUpperCase()}
+                        </button>
+                        {userMenuOpen ? (
+                          <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-border/60 bg-card p-1 shadow-lg">
+                            <div className="px-3 py-2 text-xs text-muted-foreground truncate">
+                              {authUserEmail}
+                            </div>
+                            <div className="h-px bg-border/60" />
+                            <Link
+                              href="/"
+                              onClick={() => setUserMenuOpen(false)}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            >
+                              <Home className="h-3.5 w-3.5" />
+                              Back to Umbra
+                            </Link>
+                            <button
+                              type="button"
+                              onClick={handleSignOut}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                            >
+                              <LogOut className="h-3.5 w-3.5" />
+                              Sign out
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2099,23 +2086,6 @@ function ConfidentialAIContent() {
                 aria-label="Confidential space transcript"
               >
               <div className="mx-auto flex w-full max-w-4xl flex-col space-y-8">
-                {guestNotice ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 shadow-sm dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <p>{guestNotice}</p>
-                      {authState !== "signed-in" ? (
-                        <Button
-                          asChild
-                          size="sm"
-                          variant="ghost"
-                          className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-amber-700 transition hover:bg-white dark:border-amber-400/70 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-400/10"
-                        >
-                          <Link href="/sign-in">Sign in</Link>
-                        </Button>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
                 {messages.map((m, i) => {
                   const isUser = m.role === "user"
                   const isAssistant = !isUser
@@ -2171,7 +2141,7 @@ function ConfidentialAIContent() {
                               onClick={showReasoningPanel ? toggleReasoningPanel : undefined}
                               disabled={!showReasoningPanel}
                               className={cn(
-                                "flex size-8 items-center justify-center rounded-full border border-border/40 bg-card/80 text-brand-primary transition-all dark:border-border/60 dark:bg-card/30",
+                                "flex size-8 items-center justify-center rounded-full border border-border/40 bg-card/80 text-brand-primary transition-all",
                                 "cursor-pointer hover:brightness-110 hover:bg-brand-primary/10",
                                 isReasoningOpen && "text-brand-primary ring-2 ring-brand-primary/20"
                               )}
@@ -2216,18 +2186,18 @@ function ConfidentialAIContent() {
                                   className={cn(
                                     "flex max-w-full items-center gap-2 rounded-xl border p-2",
                                     isUser
-                                      ? "border-brand-primary/20 bg-brand-primary/10 text-foreground self-end dark:border-white/20 dark:bg-white/10 dark:text-white"
+                                      ? "border-primary/20 bg-primary/10 text-foreground self-end"
                                       : "border-border/40 bg-card/50 text-foreground self-start w-full"
                                   )}
                                 >
                                   <FileText
                                     className={cn(
                                       "size-3",
-                                      isUser ? "text-brand-primary dark:text-white/80" : "text-muted-foreground"
+                                      isUser ? "text-primary" : "text-muted-foreground"
                                     )}
                                   />
                                   <span className="font-medium">{file.name}</span>
-                                  <span className={cn("text-xs", isUser ? "text-muted-foreground dark:text-white/70" : "text-muted-foreground")}>
+                                  <span className={cn("text-xs", "text-muted-foreground")}>
                                     ({formatFileSize(file.size)}, {formatWordCount(countWords(file.content))})
                                   </span>
                                 </div>
@@ -2261,10 +2231,10 @@ function ConfidentialAIContent() {
                   size="sm"
                   variant="ghost"
                   className={cn(
-                    "pointer-events-auto gap-1 rounded-full border border-border/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm backdrop-blur transition dark:border-border/60",
+                    "pointer-events-auto gap-1 rounded-full border border-border/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] shadow-sm backdrop-blur transition",
                     hasNewMessages
                       ? "bg-brand-gradient text-white hover:brightness-110"
-                      : "bg-white/95 text-foreground hover:bg-white dark:bg-[#13213E]/90 dark:text-slate-100 dark:hover:bg-[#172A50]"
+                      : "bg-card/95 text-foreground hover:bg-card"
                   )}
                   onClick={() => scrollToBottom()}
                 >
@@ -2276,16 +2246,16 @@ function ConfidentialAIContent() {
             <form
               ref={chatFormRef}
               onSubmit={onSubmit}
-              className="shrink-0 border-t border-brand-primary/20 bg-white/85 px-4 py-4 shadow-inner backdrop-blur dark:border-[#2E4674]/70 dark:bg-[#0C1630]/92"
+              className="shrink-0 border-t border-border/40 bg-card/85 px-4 py-4 backdrop-blur"
             >
               <div className="mx-auto w-full max-w-4xl">
-                <div className="rounded-2xl border border-brand-primary/25 bg-white/95 shadow-sm dark:border-[#335188]/60 dark:bg-[#132447]/88">
+                <div className="rounded-2xl border border-border/40 bg-card/95 shadow-sm">
                   {uploadedFiles.length > 0 && (
-                    <div className="space-y-2 border-b border-border/40 px-3 py-3 dark:border-border/60">
+                    <div className="space-y-2 border-b border-border/40 px-3 py-3">
                       {uploadedFiles.map((file, index) => (
                         <div
                           key={index}
-                          className="flex items-center justify-between rounded-lg bg-card/40 px-2 py-2 text-xs text-muted-foreground dark:bg-[#0E1D3D]/72"
+                          className="flex items-center justify-between rounded-lg bg-muted/40 px-2 py-2 text-xs text-muted-foreground"
                         >
                           <div className="flex items-center gap-2">
                             <FileText className="size-3 text-brand-primary" />
@@ -2299,7 +2269,7 @@ function ConfidentialAIContent() {
                             variant="ghost"
                             size="sm"
                             onClick={() => removeFile(index)}
-                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-card/80 dark:border-white/20 dark:text-slate-100 dark:hover:bg-white/[0.08]"
+                            className="h-6 w-6 rounded-full border border-border/40 p-0 text-foreground hover:bg-muted/50"
                           >
                             <X className="size-3" />
                           </Button>
@@ -2314,8 +2284,8 @@ function ConfidentialAIContent() {
                         className={cn(
                           "rounded-xl border px-3 py-2 text-xs",
                           composerNotice.type === "error"
-                            ? "border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200"
-                            : "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-200"
+                            ? "border-destructive/40 bg-destructive/10 text-destructive"
+                            : "border-info/40 bg-info/10 text-info"
                         )}
                       >
                         {composerNotice.message}
@@ -2335,7 +2305,7 @@ function ConfidentialAIContent() {
                         if (composerNotice) setComposerNotice(null)
                       }}
                       onKeyDown={onKeyDown}
-                      disabled={isSending || guestRestrictionActive}
+                      disabled={isSending}
                       placeholder="Type your message..."
                       className="min-h-[44px] flex-1 resize-none border-0 bg-transparent py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
                       rows={1}
@@ -2351,8 +2321,8 @@ function ConfidentialAIContent() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={isSending || guestRestrictionActive}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50 dark:text-slate-200 dark:hover:bg-white/[0.08] dark:hover:text-white"
+                      disabled={isSending}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted/50 hover:text-foreground disabled:opacity-50"
                       title="Upload files"
                     >
                       <Paperclip className="h-5 w-5" />
@@ -2360,9 +2330,8 @@ function ConfidentialAIContent() {
                     <Button
                       type="submit"
                       size="icon"
-                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110 dark:bg-[linear-gradient(135deg,rgba(31,74,201,0.95),rgba(18,49,146,0.95))]"
+                      className="h-10 w-10 shrink-0 rounded-xl bg-brand-gradient text-white transition hover:brightness-110"
                       disabled={
-                        guestRestrictionActive ||
                         isSending ||
                         (!input.trim() && uploadedFiles.length === 0) ||
                         !providerApiBase ||
@@ -2381,7 +2350,7 @@ function ConfidentialAIContent() {
         </section>
       </main>
       <Dialog open={sessionDialogOpen} onOpenChange={setSessionDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border border-border/50 bg-background/95 backdrop-blur dark:border-border/60 dark:bg-background/80">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto border border-border/50 bg-background/95 backdrop-blur">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
               <Lock className="h-5 w-5 text-brand-primary" />
@@ -2443,14 +2412,14 @@ function ConfidentialAIContent() {
                 type="button"
                 size="sm"
                 variant="outline"
-                className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80 dark:border-border/60 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30"
+                className="w-full rounded-full border border-border/40 bg-card/70 text-foreground hover:bg-card/80"
                 onClick={() => setShowAdvancedSettings((previous) => !previous)}
               >
                 {showAdvancedSettings ? "Hide Advanced Settings" : "Show Advanced Settings"}
               </Button>
             </div>
             {showAdvancedSettings && (
-              <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground dark:border-border/60 dark:bg-card/20">
+              <div className="space-y-3 rounded-2xl border border-border/40 bg-card/80 p-5 text-xs text-muted-foreground ">
                 <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
                   Advanced provider settings
                 </h3>
@@ -2465,7 +2434,7 @@ function ConfidentialAIContent() {
                     placeholder="https://tee.example.com"
                     value={providerBaseUrlInput}
                     onChange={(event) => setProviderBaseUrlInput(event.target.value)}
-                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:ring-2 focus:ring-brand-primary/35 "
                   />
                 </label>
                 <label htmlFor="provider-api-key" className="block space-y-1 text-muted-foreground">
@@ -2478,7 +2447,7 @@ function ConfidentialAIContent() {
                     placeholder="token-..."
                     value={providerApiKeyInput}
                     onChange={(event) => setProviderApiKeyInput(event.target.value)}
-                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-[#102A8C]/35 dark:border-border/60 dark:bg-card/15"
+                    className="w-full rounded-xl border border-border/40 bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-brand-primary/35 "
                   />
                 </label>
                 {configError && (
