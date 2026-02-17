@@ -143,9 +143,9 @@ function AgentDemo() {
           Secure session
         </span>
       </div>
-      <div className="text-muted-foreground mb-2.5">
+      <div className="text-neutral-400 mb-2.5">
         <span className="text-amber-400/60">$</span>{" "}
-        <span className="text-foreground/90">{scenario.prompt}</span>
+        <span className="text-neutral-200">{scenario.prompt}</span>
       </div>
       <div className="flex flex-col gap-1.5 min-h-[88px]">
         {scenario.steps.map((step, i) => (
@@ -154,7 +154,7 @@ function AgentDemo() {
             className={`flex items-start gap-2 transition-all duration-300 ${i < visibleSteps ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"}`}
           >
             <Check className="h-3 w-3 shrink-0 mt-0.5 text-emerald-400" />
-            <span className="text-foreground/70 leading-4">{step}</span>
+            <span className="text-neutral-300 leading-4">{step}</span>
           </div>
         ))}
       </div>
