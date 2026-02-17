@@ -7,7 +7,10 @@ import { Check, Copy, ExternalLink } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import type { Components } from "react-markdown"
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize"
+import rehypeKatex from "rehype-katex"
 import remarkGfm from "remark-gfm"
+import remarkMath from "remark-math"
+import "katex/dist/katex.min.css"
 
 type HastElement = { properties?: Record<string, unknown> }
 type Schema = Record<string, unknown>
@@ -18,15 +21,21 @@ const MarkdownVariantContext = createContext<MarkdownVariant>("default")
 
 const SUSPICIOUS_CONTENT_PATTERN = /<(?:script|iframe|object|embed)|javascript:|data:text\/html|on[a-z]+\s*=|style=/i
 
+// Allowlist of CSS properties that KaTeX uses in inline styles (from katex/src/domTree.js CssStyle type).
+// Arbitrary style attributes are not allowed — only these specific properties pass through.
+const KATEX_STYLE_ALLOW = /^\s*(background-color|border(-bottom-width|-color|-right-style|-right-width|-style|-top-width|-width)?|bottom|color|height|left|margin(-left|-right|-top)?|min-width|padding-left|position|text-shadow|top|vertical-align|width)\s*:/i
+
 const SANITIZE_SCHEMA: Schema = {
   ...defaultSchema,
   allowComments: false,
   tagNames: [
     "a",
+    "annotation",
     "blockquote",
     "br",
     "code",
     "del",
+    "div",
     "em",
     "h1",
     "h2",
@@ -38,6 +47,29 @@ const SANITIZE_SCHEMA: Schema = {
     "hr",
     "input",
     "li",
+    "math",
+    "mi",
+    "mn",
+    "mo",
+    "mrow",
+    "ms",
+    "mspace",
+    "msqrt",
+    "msub",
+    "msup",
+    "msubsup",
+    "mfrac",
+    "mover",
+    "munder",
+    "munderover",
+    "mtable",
+    "mtr",
+    "mtd",
+    "mtext",
+    "mpadded",
+    "menclose",
+    "mglyph",
+    "semantics",
     "ol",
     "p",
     "pre",
@@ -59,6 +91,7 @@ const SANITIZE_SCHEMA: Schema = {
       ...(defaultSchema.attributes?.["*"] ?? []),
       ["align", ["left", "center", "right"]],
       ["className"],
+      ["aria-hidden"],
     ],
     a: [
       ...(defaultSchema.attributes?.a ?? []),
@@ -77,9 +110,12 @@ const SANITIZE_SCHEMA: Schema = {
       ["colspan"],
       ["rowspan"],
     ],
+    annotation: [["encoding"]],
     code: [["className"]],
+    div: [["className"], ["style", KATEX_STYLE_ALLOW]],
+    math: [["xmlns"], ["display"]],
     pre: [["className"]],
-    span: [["className"]],
+    span: [["className"], ["style", KATEX_STYLE_ALLOW]],
     input: [
       ["type", ["checkbox"]],
       ["disabled"],
@@ -426,8 +462,21 @@ const components: Components = {
   br: () => <br />,
 }
 
-const MARKDOWN_PLUGINS = [remarkGfm]
+/**
+ * Convert LaTeX-style delimiters (\[...\] and \(...\)) to dollar-sign
+ * delimiters ($$...$$ and $...$) that remark-math understands.
+ */
+function normalizeLatexDelimiters(text: string): string {
+  // Display math: \[...\] → $$...$$  (may span multiple lines)
+  let result = text.replace(/\\\[([\s\S]*?)\\\]/g, (_match, inner) => `$$${inner}$$`)
+  // Inline math: \(...\) → $...$
+  result = result.replace(/\\\(([\s\S]*?)\\\)/g, (_match, inner) => `$${inner}$`)
+  return result
+}
+
+const REMARK_PLUGINS = [remarkGfm, remarkMath]
 const SANITIZE_PLUGIN: [typeof rehypeSanitize, Schema] = [rehypeSanitize, SANITIZE_SCHEMA]
+const REHYPE_PLUGINS = [SANITIZE_PLUGIN, rehypeKatex] as any[]
 
 export const Markdown = memo(function Markdown({
   content,
@@ -438,7 +487,8 @@ export const Markdown = memo(function Markdown({
   className?: string
   variant?: MarkdownVariant
 }) {
-  const trimmed = content.trim()
+  const normalized = useMemo(() => normalizeLatexDelimiters(content), [content])
+  const trimmed = normalized.trim()
   const flagged = useMemo(() => SUSPICIOUS_CONTENT_PATTERN.test(content), [content])
   useEffect(() => {
     if (flagged) {
@@ -455,7 +505,7 @@ export const Markdown = memo(function Markdown({
   return (
     <MarkdownVariantContext.Provider value={variant}>
       <div className={clsx("markdown-root whitespace-normal", className)}>
-        <ReactMarkdown remarkPlugins={MARKDOWN_PLUGINS} rehypePlugins={[SANITIZE_PLUGIN]} components={components}>
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
           {trimmed}
         </ReactMarkdown>
       </div>
