@@ -107,7 +107,7 @@ test("landing page access CTA, demo hand-off, and confidential chat flow", async
   await expect(contactLink).toBeVisible()
   await expect(contactLink).toHaveAttribute("href", "mailto:contact@concrete-security.com")
 
-  await expect(page.getByRole("button", { name: "Access Umbra Confidential Chat" })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Open Chat" })).toBeVisible()
   await page.getByRole("button", { name: DEMO_BUTTON_LABEL }).click()
 
   await page.waitForURL("**/confidential-ai**", { timeout: 15_000 })
