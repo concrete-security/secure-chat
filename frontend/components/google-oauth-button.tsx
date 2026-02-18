@@ -14,10 +14,14 @@ export function GoogleOAuthButton({ supabase, redirectTo, disabled, className }:
   const handleGoogleSignIn = async () => {
     if (!supabase) return
     const origin = typeof window !== "undefined" ? window.location.origin : ""
-    const callbackUrl = `${origin}/auth/callback?next=${encodeURIComponent(redirectTo ?? "/confidential-ai")}`
+    // Store the post-auth redirect target in a cookie so the server-side callback
+    // can read it. Sending a clean URL (no query params) to Supabase ensures
+    // reliable glob matching against the redirect URL allowlist.
+    const target = redirectTo ?? "/confidential-ai"
+    document.cookie = `auth-redirect=${encodeURIComponent(target)}; path=/; max-age=600; SameSite=Lax`
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: callbackUrl },
+      options: { redirectTo: `${origin}/auth/callback` },
     })
   }
 

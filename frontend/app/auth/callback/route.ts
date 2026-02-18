@@ -8,22 +8,34 @@ import type { Database } from "@/lib/supabase/types"
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
-  const rawRedirect = requestUrl.searchParams.get("next")
+  const cookieStore = await cookies()
+
+  // Read post-auth redirect target: prefer cookie (set by GoogleOAuthButton),
+  // fall back to ?next= query param for backwards compat / email sign-up links.
+  const rawCookieRedirect = cookieStore.get("auth-redirect")?.value
+  const rawQueryRedirect = requestUrl.searchParams.get("next")
+  const rawRedirect = rawCookieRedirect
+    ? decodeURIComponent(rawCookieRedirect)
+    : rawQueryRedirect
   const redirectPath = rawRedirect && rawRedirect.startsWith("/") ? rawRedirect : "/confidential-ai"
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   if (!code) {
-    return NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+    const response = NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+    response.cookies.delete("auth-redirect")
+    return response
   }
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.warn("Supabase callback skipped: environment variables missing.")
-    return NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+    const response = NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+    response.cookies.delete("auth-redirect")
+    return response
   }
 
   try {
-    const cookieStore = await cookies()
     const supabase = createServerClient<Database>(
       supabaseUrl,
       supabaseAnonKey,
@@ -49,7 +61,9 @@ export async function GET(request: Request) {
     console.error("Failed to exchange Supabase auth code for session", error)
   }
 
-  return NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+  const response = NextResponse.redirect(new URL(redirectPath, requestUrl.origin))
+  response.cookies.delete("auth-redirect")
+  return response
 }
 
 type AuthCallbackPayload = {
