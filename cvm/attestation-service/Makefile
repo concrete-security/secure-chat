@@ -7,6 +7,7 @@ CONTAINER_NAME = attestation-service
 CONTAINER_PORT = 8080
 HOST_PORT = 8080
 BASE_URL = http://localhost:$(HOST_PORT)
+# Dev fallback for environments without dstack socket
 DEV_EKM_SHARED_SECRET = test_shared_secret_for_ekm_validation_min_32_chars
 
 .PHONY: help build run test test-build test-api clean dev all

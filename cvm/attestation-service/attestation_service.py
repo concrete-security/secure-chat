@@ -90,16 +90,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Validate EKM_SHARED_SECRET at startup
-EKM_SHARED_SECRET = os.getenv("EKM_SHARED_SECRET")
-if EKM_SHARED_SECRET:
-    if len(EKM_SHARED_SECRET) < 32:
-        logger.error("EKM_SHARED_SECRET is too short (minimum 32 characters recommended)")
-        raise RuntimeError("EKM_SHARED_SECRET is too short")
-    logger.info("EKM validation enabled with shared secret")
-else:
-    logger.error("EKM_SHARED_SECRET not set - EKM headers will not be validated!")
-    raise RuntimeError("EKM_SHARED_SECRET not set")
+
+def _get_ekm_hmac_secret() -> str:
+    """Derive EKM HMAC key from TEE, falling back to env var for dev/test."""
+    try:
+        from dstack_sdk import DstackClient
+
+        client = DstackClient()
+        derived = client.get_key("ekm/hmac-key/v1").decode_key().hex()
+        logger.info("EKM HMAC key derived from TEE (dstack)")
+        return derived
+    except Exception as e:
+        logger.warning(
+            f"dstack key derivation failed ({e}), falling back to EKM_SHARED_SECRET env var"
+        )
+        env_secret = os.getenv("EKM_SHARED_SECRET")
+        if not env_secret:
+            logger.error("EKM_SHARED_SECRET not set - EKM headers will not be validated!")
+            raise RuntimeError("EKM_SHARED_SECRET not set")
+        if len(env_secret) < 32:
+            logger.error("EKM_SHARED_SECRET is too short (minimum 32 characters recommended)")
+            raise RuntimeError("EKM_SHARED_SECRET is too short")
+        logger.info("EKM validation enabled with shared secret")
+        return env_secret
+
+
+EKM_SHARED_SECRET = _get_ekm_hmac_secret()
 
 
 def validate_and_extract_ekm(signed_header: str, secret: str) -> str:
