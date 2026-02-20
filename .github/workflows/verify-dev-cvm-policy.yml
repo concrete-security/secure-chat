@@ -1,0 +1,188 @@
+name: Verify Development CVM Policy
+
+on:
+  workflow_run:
+    workflows: ["Deploy to Development CVM"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconstruct:
+    name: Reconstruct CVM Hashes
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://vllm.concrete-security.com
+      ATTESTATION_URL: https://vllm.concrete-security.com/tdx_quote
+      WORKFLOW_HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          ref: ${{ env.WORKFLOW_HEAD_SHA }}
+
+      - name: Rebuild expected hashes from raw quote evidence
+        run: |
+          python3 -m pip install --disable-pip-version-check --quiet jsonschema==4.23.0
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from jsonschema import Draft202012Validator
+
+          schema = json.loads(Path("cvm/policies/schema/atlas-policy.schema.json").read_text(encoding="utf-8"))
+          policy = json.loads(Path("cvm/policies/dev/atlas-policy.json").read_text(encoding="utf-8"))
+          validator = Draft202012Validator(schema)
+          errors = sorted(validator.iter_errors(policy), key=lambda e: e.path)
+          if errors:
+              for err in errors:
+                  path = ".".join(str(item) for item in err.path) or "<root>"
+                  print(f"[schema] {path}: {err.message}")
+              raise SystemExit(1)
+          print("Policy schema validation passed")
+          PY
+
+          mkdir -p artifacts
+          python3 scripts/rebuild_cvm_hashes.py \
+            --attestation-url "$ATTESTATION_URL" \
+            --policy-file cvm/policies/dev/atlas-policy.json \
+            --compose-file cvm/docker-compose.yml \
+            --report-out artifacts/reconstructed-hashes.json \
+            --association-out artifacts/policy-association-input.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --commit "$WORKFLOW_HEAD_SHA"
+
+      - name: Upload reconstruction reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvm-reconstruction-reports
+          path: |
+            artifacts/reconstructed-hashes.json
+            artifacts/policy-association-input.json
+
+  atlas-runtime:
+    name: Atlas Runtime Verification
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: https://vllm.concrete-security.com
+      WORKFLOW_HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          ref: ${{ env.WORKFLOW_HEAD_SHA }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@8f152de45cc393bb48ce5d89d36b731f54556e65 # v4
+        with:
+          node-version: "20"
+
+      - name: Install Atlas Node client
+        run: npm install --no-save @concrete-security/atlas-node@0.2.0
+
+      - name: Run Atlas aTLS runtime verification
+        run: |
+          mkdir -p artifacts
+          node scripts/atlas_runtime_verify.mjs \
+            --base-url "$BASE_URL" \
+            --policy-file cvm/policies/dev/atlas-policy.json \
+            --request-path /health \
+            --report-out artifacts/atlas-runtime-report.json
+
+      - name: Upload runtime report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvm-atlas-runtime-report
+          path: artifacts/atlas-runtime-report.json
+
+  transparency-log:
+    name: Publish Policy Association to Rekor
+    runs-on: ubuntu-latest
+    needs: [reconstruct, atlas-runtime]
+    if: ${{ needs.reconstruct.result == 'success' && needs.atlas-runtime.result == 'success' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      WORKFLOW_HEAD_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+        with:
+          ref: ${{ env.WORKFLOW_HEAD_SHA }}
+
+      - name: Download reconstruction reports
+        uses: actions/download-artifact@v4
+        with:
+          name: cvm-reconstruction-reports
+          path: artifacts
+
+      - name: Download runtime report
+        uses: actions/download-artifact@v4
+        with:
+          name: cvm-atlas-runtime-report
+          path: artifacts
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.10.0
+
+      - name: Build transparency association payload
+        run: |
+          jq \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg workflow "verify-dev-cvm-policy" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg run_url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson runtime "$(cat artifacts/atlas-runtime-report.json)" \
+            --argjson reconstruction "$(cat artifacts/reconstructed-hashes.json)" \
+            '
+              .generated_at = $generated_at
+              | .github = {
+                  workflow: $workflow,
+                  run_id: $run_id,
+                  run_attempt: $run_attempt,
+                  run_url: $run_url
+                }
+              | .runtime = {
+                  request_path: $runtime.request_path,
+                  response_status: $runtime.response.status,
+                  attestation: $runtime.attestation,
+                  checks: $runtime.checks,
+                  overall_ok: $runtime.overall_ok
+                }
+              | .reconstruction = {
+                  quote_sha256: $reconstruction.quote.sha256,
+                  checks: $reconstruction.checks,
+                  failed_checks: $reconstruction.failed_checks,
+                  overall_ok: $reconstruction.overall_ok
+                }
+            ' \
+            artifacts/policy-association-input.json > artifacts/policy-association.json
+
+      - name: Sign association payload (keyless + Rekor)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature artifacts/policy-association.sig \
+            --output-certificate artifacts/policy-association.pem \
+            --bundle artifacts/policy-association.bundle.json \
+            artifacts/policy-association.json
+
+      - name: Upload transparency artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cvm-policy-transparency-artifacts
+          path: |
+            artifacts/reconstructed-hashes.json
+            artifacts/atlas-runtime-report.json
+            artifacts/policy-association-input.json
+            artifacts/policy-association.json
+            artifacts/policy-association.sig
+            artifacts/policy-association.pem
+            artifacts/policy-association.bundle.json

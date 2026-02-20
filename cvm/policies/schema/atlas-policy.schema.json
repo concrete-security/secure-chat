@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://concrete-security.com/schemas/atlas-policy.schema.json",
+  "title": "Atlas dstack_tdx Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "const": "dstack_tdx"
+    },
+    "expected_bootchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mrtd": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{96}$"
+        },
+        "rtmr0": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{96}$"
+        },
+        "rtmr1": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{96}$"
+        },
+        "rtmr2": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{96}$"
+        }
+      },
+      "required": ["mrtd", "rtmr0", "rtmr1", "rtmr2"]
+    },
+    "app_compose": {
+      "type": "object",
+      "properties": {
+        "docker_compose_file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_envs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["docker_compose_file"],
+      "additionalProperties": true
+    },
+    "os_image_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "allowed_tcb_status": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "UpToDate",
+          "OutOfDate",
+          "ConfigurationNeeded",
+          "TDRelaunchAdvised",
+          "SWHardeningNeeded",
+          "Revoked"
+        ]
+      }
+    },
+    "pccs_url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "cache_collateral": {
+      "type": "boolean"
+    },
+    "disable_runtime_verification": {
+      "type": "boolean"
+    }
+  },
+  "required": ["type", "allowed_tcb_status"],
+  "if": {
+    "properties": {
+      "disable_runtime_verification": {
+        "const": true
+      }
+    },
+    "required": ["disable_runtime_verification"]
+  },
+  "else": {
+    "required": ["expected_bootchain", "os_image_hash", "app_compose"]
+  }
+}
