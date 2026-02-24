@@ -8,7 +8,7 @@ import {
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import PersonalAgentsWaitlistContent from "./waitlist-content"
 
-export default async function PersonalAgentsPage() {
+export default async function AgentsWaitlistPage() {
   let shouldRedirect = false
 
   try {
@@ -24,7 +24,7 @@ export default async function PersonalAgentsPage() {
   }
 
   if (shouldRedirect) {
-    redirect("/personal-agents/workspace")
+    redirect("/agents")
   }
 
   return <PersonalAgentsWaitlistContent />

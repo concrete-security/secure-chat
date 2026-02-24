@@ -31,27 +31,27 @@ type ValueProp = {
 const valueProps: ValueProp[] = [
   {
     icon: Bot,
-    title: "Personalized Agents",
+    title: "Org-aware agents",
     description:
-      "AI agents tailored to your workflows, trained on your private data without exposing it.",
+      "Give agents access to internal documents, policies, and workflows. They work with your context without it leaving your security boundary.",
   },
   {
     icon: ShieldCheck,
-    title: "Private by Default",
+    title: "Confidential by design",
     description:
-      "Every agent runs in a confidential environment — your prompts and data stay encrypted end to end.",
+      "Every agent runs in a hardware-attested enclave. Prompts and data are encrypted in transit, at rest, and during processing.",
   },
   {
     icon: Lock,
-    title: "Cryptographic Guarantees",
+    title: "Verifiable trust",
     description:
-      "The agent runtime is verified through cryptographic attestation before any data is processed.",
+      "Remote attestation lets your team independently verify the agent environment before sending any data. No trust assumptions required.",
   },
   {
     icon: Fingerprint,
-    title: "Your Data, Your Rules",
+    title: "Enterprise controls",
     description:
-      "Full control over what data your agents can access and what they produce — no third-party access.",
+      "Granular permissions, audit logs, and data residency controls. Your security team sets the boundaries.",
   },
 ]
 
@@ -185,9 +185,13 @@ export default function PersonalAgentsWaitlistContent() {
       </header>
 
       <main className="relative z-10">
-        {/* Hero Section */}
-        <section className="flex justify-center px-4 pt-10 pb-16 md:pt-16 md:pb-24">
-          <FadeIn direction="up" distance={32}>
+        {/* Hero + Waitlist Section */}
+        <section className="flex justify-center px-4 pt-10 pb-20 md:pt-16 md:pb-28">
+          <motion.div
+            initial={{ opacity: 0, y: 32 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          >
             <div className="flex max-w-[720px] flex-col items-center gap-6 text-center">
               <div className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.24em] text-amber-400 shimmer-bg">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -197,15 +201,102 @@ export default function PersonalAgentsWaitlistContent() {
                 Private AI Agents
               </h1>
               <p className="text-heading text-muted-foreground">
-                Confidential AI, on your terms
+                Confidential AI that reports to you
               </p>
               <p className="max-w-[520px] text-body-lg text-muted-foreground">
-                Autonomous AI agents that keep your data confidential. Your
-                prompts, documents, and results are encrypted and never exposed
-                to anyone — not even us.
+                AI agents that run in verified confidential environments. Your
+                prompts, documents, and outputs never leave the enclave
+                unencrypted. Not even we can see them.
               </p>
+
+              <motion.div
+                initial={{ opacity: 0, y: 24 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
+              >
+                <div className="mt-4 w-full max-w-md rounded-[28px] glass-card p-6 shadow-card text-left md:p-8">
+                  {error ? (
+                    <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                      {error}
+                    </div>
+                  ) : null}
+
+                  {formTokenError ? (
+                    <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                      {formTokenError}
+                    </div>
+                  ) : null}
+
+                  {status === "success" ? (
+                    <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
+                      You're on the list. We'll be in touch with next steps.
+                    </div>
+                  ) : null}
+
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                      ref={honeypotRef}
+                      type="text"
+                      name="workspace-url"
+                      tabIndex={-1}
+                      autoComplete="off"
+                      aria-hidden="true"
+                      className="absolute h-px w-px opacity-0"
+                      defaultValue=""
+                    />
+
+                    <label
+                      htmlFor="personal-agents-email"
+                      className="flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground"
+                    >
+                      <Mail className="size-4 text-primary" />
+                      <input
+                        id="personal-agents-email"
+                        type="email"
+                        placeholder="Your work email"
+                        className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        disabled={status === "loading" || status === "success"}
+                        required
+                      />
+                    </label>
+
+                    <textarea
+                      id="personal-agents-use-case"
+                      placeholder="What would you use private agents for? (optional)"
+                      className="min-h-[90px] w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-accent focus:outline-none"
+                      value={useCase}
+                      onChange={(event) => setUseCase(event.target.value)}
+                      disabled={status === "loading" || status === "success"}
+                    />
+
+                    <Button
+                      type="submit"
+                      className="h-12 w-full rounded-full bg-amber-500 px-6 text-sm font-semibold text-white transition hover:bg-amber-400"
+                      disabled={
+                        status === "loading" ||
+                        status === "success" ||
+                        formTokenLoading ||
+                        !formToken
+                      }
+                    >
+                      {status === "loading"
+                        ? "Submitting…"
+                        : status === "success"
+                          ? "Request received"
+                          : "Request early access"}
+                      <ArrowRight className="ml-2 size-4" />
+                    </Button>
+                    <p className="text-[11px] text-muted-foreground">
+                      We review every request. No spam. We'll reach out with
+                      next steps.
+                    </p>
+                  </form>
+                </div>
+              </motion.div>
             </div>
-          </FadeIn>
+          </motion.div>
         </section>
 
         {/* Value Props Section */}
@@ -214,16 +305,16 @@ export default function PersonalAgentsWaitlistContent() {
             <FadeIn direction="up">
               <div className="max-w-[720px] space-y-4">
                 <span className="text-overline uppercase tracking-[0.4em] text-muted-foreground">
-                  What Are Private AI Agents
+                  How they work
                 </span>
                 <h2 className="text-heading-lg text-foreground">
-                  AI That Works for You — And Only You
+                  AI agents that answer to your organization
                 </h2>
                 <p className="text-body-lg text-muted-foreground">
-                  Private AI Agents combine the power of autonomous AI with
-                  strong confidentiality guarantees. Each agent is
-                  cryptographically verified before it processes your data, and
-                  everything stays encrypted end to end.
+                  Each agent runs inside a cryptographically attested enclave.
+                  Your data is encrypted before it leaves your browser and stays
+                  that way until it's back. The agent's integrity is verified
+                  before it touches anything.
                 </p>
               </div>
             </FadeIn>
@@ -251,111 +342,6 @@ export default function PersonalAgentsWaitlistContent() {
             </StaggerChildren>
           </div>
         </section>
-
-        {/* Waitlist Section */}
-        <section className="px-4 pb-20">
-          <div className="container flex flex-col gap-10">
-            <FadeIn direction="up">
-              <div className="max-w-[720px] space-y-4">
-                <span className="text-overline uppercase tracking-[0.4em] text-muted-foreground">
-                  Early Access
-                </span>
-                <h2 className="text-heading-lg text-foreground">
-                  Be the First to Deploy Private Agents
-                </h2>
-                <p className="text-body-lg text-muted-foreground">
-                  We're building Private AI Agents for teams that need AI
-                  automation without compromising on data privacy. Join the
-                  waitlist to get early access.
-                </p>
-              </div>
-            </FadeIn>
-
-            <FadeIn direction="up" delay={0.1}>
-              <div className="w-full max-w-md rounded-[28px] glass-card p-6 shadow-card md:p-8">
-                {error ? (
-                  <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                    {error}
-                  </div>
-                ) : null}
-
-                {formTokenError ? (
-                  <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-                    {formTokenError}
-                  </div>
-                ) : null}
-
-                {status === "success" ? (
-                  <div className="rounded-2xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-                    You're on the list. We'll reach out when Private AI Agents
-                    are ready for your team.
-                  </div>
-                ) : null}
-
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <input
-                    ref={honeypotRef}
-                    type="text"
-                    name="workspace-url"
-                    tabIndex={-1}
-                    autoComplete="off"
-                    aria-hidden="true"
-                    className="absolute h-px w-px opacity-0"
-                    defaultValue=""
-                  />
-
-                  <label
-                    htmlFor="personal-agents-email"
-                    className="flex items-center gap-2 rounded-2xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground"
-                  >
-                    <Mail className="size-4 text-primary" />
-                    <input
-                      id="personal-agents-email"
-                      type="email"
-                      placeholder="Your email"
-                      className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      disabled={status === "loading" || status === "success"}
-                      required
-                    />
-                  </label>
-
-                  <textarea
-                    id="personal-agents-use-case"
-                    placeholder="What would you use private agents for? (optional)"
-                    className="min-h-[90px] w-full rounded-2xl border border-border bg-background px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-accent focus:outline-none"
-                    value={useCase}
-                    onChange={(event) => setUseCase(event.target.value)}
-                    disabled={status === "loading" || status === "success"}
-                  />
-
-                  <Button
-                    type="submit"
-                    className="h-12 w-full rounded-full bg-amber-500 px-6 text-sm font-semibold text-white transition hover:bg-amber-400"
-                    disabled={
-                      status === "loading" ||
-                      status === "success" ||
-                      formTokenLoading ||
-                      !formToken
-                    }
-                  >
-                    {status === "loading"
-                      ? "Submitting…"
-                      : status === "success"
-                        ? "Request received"
-                        : "Request early access"}
-                    <ArrowRight className="ml-2 size-4" />
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground">
-                    We review requests manually. No spam — just next steps when
-                    Private AI Agents are ready.
-                  </p>
-                </form>
-              </div>
-            </FadeIn>
-          </div>
-        </section>
       </main>
 
       <footer className="relative z-10 border-t border-border/60 bg-background/80 backdrop-blur-md">
@@ -364,13 +350,13 @@ export default function PersonalAgentsWaitlistContent() {
           <div className="flex flex-wrap gap-4">
             <Link
               className="transition hover:text-primary"
-              href="/confidential-ai"
+              href="/chat"
             >
               Confidential Chat
             </Link>
             <Link
               className="transition hover:text-primary"
-              href="/personal-agents"
+              href="/agents"
             >
               Private AI Agents
             </Link>
