@@ -187,11 +187,7 @@ export default function PersonalAgentsWaitlistContent() {
       <main className="relative z-10">
         {/* Hero + Waitlist Section */}
         <section className="flex justify-center px-4 pt-10 pb-20 md:pt-16 md:pb-28">
-          <motion.div
-            initial={{ opacity: 0, y: 32 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          >
+          <FadeIn direction="up" distance={32} onMount>
             <div className="flex max-w-[720px] flex-col items-center gap-6 text-center">
               <div className="flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.24em] text-amber-400 shimmer-bg">
                 <Sparkles className="h-3.5 w-3.5" />
@@ -209,11 +205,7 @@ export default function PersonalAgentsWaitlistContent() {
                 unencrypted. Not even we can see them.
               </p>
 
-              <motion.div
-                initial={{ opacity: 0, y: 24 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.15, ease: "easeOut" }}
-              >
+              <FadeIn direction="up" delay={0.15} onMount>
                 <div className="mt-4 w-full max-w-md rounded-[28px] glass-card p-6 shadow-card text-left md:p-8">
                   {error ? (
                     <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -294,9 +286,9 @@ export default function PersonalAgentsWaitlistContent() {
                     </p>
                   </form>
                 </div>
-              </motion.div>
+              </FadeIn>
             </div>
-          </motion.div>
+          </FadeIn>
         </section>
 
         {/* Value Props Section */}

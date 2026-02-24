@@ -362,7 +362,7 @@ export default function LandingPage() {
       <main className="relative z-10">
         {/* Page title */}
         <section className="px-4 pt-8 pb-2 md:pt-12">
-          <FadeIn direction="up" distance={24}>
+          <FadeIn direction="up" distance={24} onMount>
             <div className="flex flex-col items-center gap-3 text-center">
               <h1 className="text-display-xl text-foreground">Umbra</h1>
               <p className="mx-auto max-w-[560px] text-body-lg text-muted-foreground">
@@ -376,7 +376,7 @@ export default function LandingPage() {
         <section className="px-4 pt-4 pb-16 md:pb-24">
           <div className="container grid gap-6 md:grid-cols-2">
             {/* Left — Confidential Chat */}
-            <FadeIn direction="up" distance={32} delay={0.05} className="md:h-full">
+            <FadeIn direction="up" distance={32} delay={0.05} onMount className="md:h-full">
               <div className="relative overflow-hidden rounded-[32px] glass-card px-8 pb-10 pt-8 shadow-hero h-full">
                 <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-inset ring-accent/20" aria-hidden="true" />
                 <div className="relative z-10 flex h-full flex-col gap-6">
@@ -532,7 +532,7 @@ export default function LandingPage() {
             </FadeIn>
 
             {/* Right — Private AI Agents */}
-            <FadeIn direction="up" distance={32} delay={0.15} className="md:h-full">
+            <FadeIn direction="up" distance={32} delay={0.15} onMount className="md:h-full">
               <div className="relative overflow-hidden rounded-[32px] glass-card px-8 pb-10 pt-8 shadow-hero h-full">
                 <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-inset ring-amber-500/20" aria-hidden="true" />
                 <div className="relative z-10 flex h-full flex-col gap-6">

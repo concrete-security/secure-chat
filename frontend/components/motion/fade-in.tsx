@@ -14,6 +14,8 @@ type FadeInProps = {
   delay?: number
   duration?: number
   once?: boolean
+  /** Animate on mount instead of on scroll into view. Use for above-the-fold content. */
+  onMount?: boolean
   className?: string
 }
 
@@ -31,6 +33,7 @@ export function FadeIn({
   delay = 0,
   duration = DURATION.entrance,
   once = true,
+  onMount = false,
   className,
 }: FadeInProps) {
   const reducedMotion = useReducedMotion()
@@ -40,12 +43,13 @@ export function FadeIn({
   }
 
   const offset = directionOffset[direction]
+  const initial = { opacity: 0, x: offset.x * distance, y: offset.y * distance }
+  const target = { opacity: 1, x: 0, y: 0 }
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: offset.x * distance, y: offset.y * distance }}
-      whileInView={{ opacity: 1, x: 0, y: 0 }}
-      viewport={{ once, margin: "-64px" }}
+      initial={initial}
+      {...(onMount ? { animate: target } : { whileInView: target, viewport: { once, margin: "-64px" } })}
       transition={{ duration, delay, ease: EASE.decelerate }}
       className={className}
     >
