@@ -80,10 +80,41 @@ Fill in the variables below. Generate a strong `FORM_TOKEN_SECRET`, e.g. `openss
 5. Optional: tag beta users with `roles:["member"]` so they can sign in without consuming the guest session.
 
 ### 4. Run the app locally
+
+**HTTP (basic development):**
 ```bash
-pnpm dev --hostname 0.0.0.0 --port 3000
+pnpm dev
 ```
-Or use `make dev` / `make dev-open`. Visit `http://localhost:3000`.
+Visit `http://localhost:3000`. Passkeys and CVM owner flows will not work (no secure context).
+
+**HTTPS (passkeys & CVM features):**
+
+Passkeys (WebAuthn) require HTTPS on non-localhost domains. The domain `localhost.concrete-security.com` is also required for CVM server-side origin whitelisting.
+
+One-time setup:
+```bash
+# 1. Add DNS entry (requires sudo)
+echo '127.0.0.1 localhost.concrete-security.com' | sudo tee -a /etc/hosts
+
+# 2. Install mkcert and trust the local CA (requires sudo for trust)
+brew install mkcert
+mkcert -install
+
+# 3. Generate certificates
+mkdir -p certs
+cd certs
+mkcert localhost.concrete-security.com localhost 127.0.0.1
+cd ..
+
+# 4. Set the app URL in .env.local
+# NEXT_PUBLIC_APP_URL="https://localhost.concrete-security.com:3000"
+```
+
+Then start the HTTPS dev server:
+```bash
+pnpm dev:https
+```
+Visit `https://localhost.concrete-security.com:3000`.
 
 ### 5. Build for production
 ```bash
@@ -95,6 +126,7 @@ pnpm build && pnpm start
 
 | Command | Purpose |
 | --- | --- |
+| `pnpm dev:https` | HTTPS dev server on `localhost.concrete-security.com:3000` (passkeys & CVM). |
 | `pnpm lint` | Runs `next lint` with the repo-specific ESLint overrides. |
 | `pnpm test:unit` | Executes Vitest specs under `tests/unit` (coverage in `test-results/unit/coverage`). |
 | `pnpm test:e2e` | Runs the Playwright suite (`tests/e2e/secure-chat.spec.ts`) against `http://127.0.0.1:3000`. |

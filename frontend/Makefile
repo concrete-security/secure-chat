@@ -3,19 +3,21 @@
 PORT ?= 3000
 FORM_TOKEN_SECRET ?= local-form-token
 
-.PHONY: help install dev dev-open open open-when-ready build start lint clean test
+.PHONY: help install dev dev-https dev-open dev-open-https open open-when-ready build start lint clean test
 
 help:
 	@echo "Make targets:"
-	@echo "  make install       # Install deps (pnpm or npm)"
-	@echo "  make dev           # Run dev server on PORT=$(PORT)"
-	@echo "  make dev-open      # Start dev and auto-open browser when ready"
-	@echo "  make open          # Open http://localhost.concrete-security.com:$(PORT) in browser"
-	@echo "  make build         # Production build"
-	@echo "  make start         # Start production server on PORT=$(PORT)"
-	@echo "  make lint          # Run linter"
-	@echo "  make test          # Run unit + Playwright tests (used in CI)"
-	@echo "  make clean         # Remove .next build output"
+	@echo "  make install          # Install deps (pnpm or npm)"
+	@echo "  make dev              # Run HTTP dev server on PORT=$(PORT)"
+	@echo "  make dev-https        # Run HTTPS dev server (passkeys & CVM)"
+	@echo "  make dev-open         # HTTP dev + auto-open browser"
+	@echo "  make dev-open-https   # HTTPS dev + auto-open browser"
+	@echo "  make open             # Open in browser (defaults to HTTPS)"
+	@echo "  make build            # Production build"
+	@echo "  make start            # Start production server on PORT=$(PORT)"
+	@echo "  make lint             # Run linter"
+	@echo "  make test             # Run unit + Playwright tests (used in CI)"
+	@echo "  make clean            # Remove .next build output"
 
 install:
 	@if command -v pnpm >/dev/null 2>&1; then pnpm install; else npm install; fi
@@ -23,21 +25,29 @@ install:
 dev:
 	@if command -v pnpm >/dev/null 2>&1; then PORT=$(PORT) pnpm dev; else PORT=$(PORT) npm run dev -- -p $(PORT); fi
 
+dev-https:
+	@if command -v pnpm >/dev/null 2>&1; then PORT=$(PORT) pnpm dev:https; else PORT=$(PORT) npm run dev:https; fi
+
 # Start dev server and open the browser when it's reachable
 dev-open:
-	@$(MAKE) open-when-ready -s &
+	@DEV_URL="http://localhost:$(PORT)" $(MAKE) open-when-ready -s &
 	@$(MAKE) dev -s
 
+dev-open-https:
+	@DEV_URL="https://localhost.concrete-security.com:$(PORT)" $(MAKE) open-when-ready -s &
+	@$(MAKE) dev-https -s
+
 open-when-ready:
-	@echo "Waiting for http://localhost.concrete-security.com:$(PORT) ..."; \
-	until curl -sSf "http://localhost.concrete-security.com:$(PORT)" >/dev/null 2>&1; do sleep 1; done; \
-	$(MAKE) open -s
+	@echo "Waiting for $(DEV_URL) ..."; \
+	until curl -ksSf "$(DEV_URL)" >/dev/null 2>&1; do sleep 1; done; \
+	DEV_URL="$(DEV_URL)" $(MAKE) open -s
 
 open:
-	@if command -v open >/dev/null 2>&1; then open "http://localhost.concrete-security.com:$(PORT)"; \
-	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "http://localhost.concrete-security.com:$(PORT)"; \
-	elif command -v powershell.exe >/dev/null 2>&1; then powershell.exe -NoProfile -Command Start-Process "http://localhost.concrete-security.com:$(PORT)"; \
-	else printf "Open manually: http://localhost.concrete-security.com:$(PORT)\n"; fi
+	@URL="$${DEV_URL:-https://localhost.concrete-security.com:$(PORT)}"; \
+	if command -v open >/dev/null 2>&1; then open "$$URL"; \
+	elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$$URL"; \
+	elif command -v powershell.exe >/dev/null 2>&1; then powershell.exe -NoProfile -Command Start-Process "$$URL"; \
+	else printf "Open manually: $$URL\n"; fi
 
 build:
 	@if command -v pnpm >/dev/null 2>&1; then pnpm build; else npm run build; fi
