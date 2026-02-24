@@ -36,13 +36,13 @@ export function UserMenu() {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/confidential-ai">
+          <Link href="/chat">
             <MessageSquare className="mr-2 h-4 w-4" />
             Confidential Chat
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="text-foreground">
-          <Link href="/personal-agents">
+          <Link href="/agents">
             <Bot className="mr-2 h-4 w-4" />
             Private AI Agents
           </Link>

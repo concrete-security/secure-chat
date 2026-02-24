@@ -227,7 +227,7 @@ export default function LandingPage() {
   const navigateToConfidentialChat = () => {
     setIsTransitioning(true)
     setTimeout(() => {
-      router.push("/confidential-ai")
+      router.push("/chat")
     }, 600)
   }
 
@@ -554,7 +554,7 @@ export default function LandingPage() {
                       className="h-10 w-full rounded-xl bg-amber-500 text-sm font-medium text-white shadow-sm transition hover:bg-amber-400"
                       asChild
                     >
-                      <Link href="/personal-agents">
+                      <Link href="/agents">
                         Join the waitlist
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
@@ -631,10 +631,10 @@ export default function LandingPage() {
         <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Umbra.</p>
           <div className="flex flex-wrap gap-4">
-            <Link className="transition hover:text-primary" href="/confidential-ai">
+            <Link className="transition hover:text-primary" href="/chat">
               Confidential Chat
             </Link>
-            <Link className="transition hover:text-primary" href="/personal-agents">
+            <Link className="transition hover:text-primary" href="/agents">
               Private AI Agents
             </Link>
             <a className="transition hover:text-primary" href="mailto:contact@concrete-security.com">

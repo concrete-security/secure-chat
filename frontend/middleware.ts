@@ -16,8 +16,8 @@ export async function middleware(request: NextRequest) {
       // Fail closed in production: auth infrastructure must be available
       const pathname = request.nextUrl.pathname
       if (
-        pathname.startsWith("/confidential-ai") ||
-        pathname.startsWith("/personal-agents/workspace")
+        pathname.startsWith("/chat") ||
+        (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist"))
       ) {
         return NextResponse.redirect(new URL("/sign-in?auth=required", request.url))
       }
@@ -48,8 +48,8 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
   if (
-    pathname.startsWith("/confidential-ai") ||
-    pathname.startsWith("/personal-agents/workspace")
+    pathname.startsWith("/chat") ||
+    (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist"))
   ) {
     try {
       const { data: { user } } = await supabase.auth.getUser()

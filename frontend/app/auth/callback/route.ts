@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const rawRedirect = rawCookieRedirect
     ? decodeURIComponent(rawCookieRedirect)
     : rawQueryRedirect
-  const redirectPath = rawRedirect && rawRedirect.startsWith("/") ? rawRedirect : "/confidential-ai"
+  const redirectPath = rawRedirect && rawRedirect.startsWith("/") ? rawRedirect : "/"
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY

@@ -98,7 +98,7 @@ export default function TeamPage() {
         <div className="container flex flex-col gap-4 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
           <p>© {new Date().getFullYear()} Umbra.</p>
           <div className="flex flex-wrap gap-4">
-            <Link className="transition hover:text-primary" href="/confidential-ai">
+            <Link className="transition hover:text-primary" href="/chat">
               Confidential Chat
             </Link>
             <Link className="transition hover:text-primary" href="/team">

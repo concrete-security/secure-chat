@@ -2064,7 +2064,7 @@ function ConfidentialAIContent() {
                               Back to Umbra
                             </Link>
                             <Link
-                              href="/confidential-ai"
+                              href="/chat"
                               onClick={() => setUserMenuOpen(false)}
                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-foreground transition hover:bg-muted"
                             >
@@ -2072,7 +2072,7 @@ function ConfidentialAIContent() {
                               Confidential Chat
                             </Link>
                             <Link
-                              href="/personal-agents"
+                              href="/agents"
                               onClick={() => setUserMenuOpen(false)}
                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
                             >

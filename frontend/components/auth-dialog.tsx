@@ -102,7 +102,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     if (authState === "authenticated") {
       const timer = setTimeout(() => {
         onOpenChange(false)
-        router.push("/confidential-ai")
+        router.push("/chat")
       }, 1500)
       return () => clearTimeout(timer)
     }
@@ -137,7 +137,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
           email: trimmedEmail,
           password: signInPassword,
           options: {
-            emailRedirectTo: `${origin}/auth/callback?next=/confidential-ai`,
+            emailRedirectTo: `${origin}/auth/callback?next=/chat`,
           },
         })
 
@@ -226,7 +226,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
               <>
                 <GoogleOAuthButton
                   supabase={supabase}
-                  redirectTo="/confidential-ai"
+                  redirectTo="/chat"
                   disabled={signInLoading}
                   className="w-full rounded-xl py-3"
                 />

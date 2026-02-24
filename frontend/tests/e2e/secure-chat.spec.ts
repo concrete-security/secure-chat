@@ -110,8 +110,8 @@ test("landing page access CTA, demo hand-off, and confidential chat flow", async
   await expect(page.getByRole("button", { name: "Open Chat" })).toBeVisible()
   await page.getByRole("button", { name: DEMO_BUTTON_LABEL }).click()
 
-  await page.waitForURL("**/confidential-ai**", { timeout: 15_000 })
-  await expect(page).toHaveURL(/\/confidential-ai(?:\?.*)?$/)
+  await page.waitForURL("**/chat**", { timeout: 15_000 })
+  await expect(page).toHaveURL(/\/chat(?:\?.*)?$/)
   const storedProvider = await page.evaluate(() => localStorage.getItem("confidential-provider-settings-v1"))
   console.log("[e2e] provider settings:", storedProvider)
 

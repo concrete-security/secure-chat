@@ -249,7 +249,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         if (isAuthSessionMissingError(error)) {
-          router.replace("/sign-in?auth=required&redirect=/confidential-ai")
+          router.replace("/sign-in?auth=required&redirect=/chat")
           return
         }
         setManifestError(error.message)
@@ -258,7 +258,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!data.user) {
-        router.replace("/sign-in?auth=required&redirect=/confidential-ai")
+        router.replace("/sign-in?auth=required&redirect=/chat")
         return
       }
 

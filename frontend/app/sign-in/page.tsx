@@ -12,9 +12,9 @@ import { isAuthSessionMissingError } from "@/lib/supabase/errors"
 
 function sanitizeRedirect(redirectParam: string | null) {
   if (!redirectParam) {
-    return "/confidential-ai"
+    return "/"
   }
-  return redirectParam.startsWith("/") ? redirectParam : "/confidential-ai"
+  return redirectParam.startsWith("/") ? redirectParam : "/"
 }
 
 function SignInForm() {

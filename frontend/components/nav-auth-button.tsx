@@ -28,26 +28,23 @@ export function NavAuthButton() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const isInitializedRef = useRef(false)
 
   useEffect(() => {
-    if (isInitializedRef.current) {
-      return
-    }
-    const client = supabase
-    if (!client) {
-      isInitializedRef.current = true
+    if (!supabase) {
       setAuthState("signed-out")
       return
     }
 
-    const authClient = client as NonNullable<typeof client>
+    const client = supabase
     let mounted = true
-    isInitializedRef.current = true
+
+    const timeout = setTimeout(() => {
+      if (mounted) setAuthState((s) => (s === "loading" ? "signed-out" : s))
+    }, 4000)
 
     async function resolveInitialState() {
       try {
-        const { data, error } = await authClient.auth.getUser()
+        const { data, error } = await client.auth.getUser()
         if (!mounted) return
         if (error) {
           if (!isAuthSessionMissingError(error)) {
@@ -72,7 +69,7 @@ export function NavAuthButton() {
 
     const {
       data: { subscription },
-    } = authClient.auth.onAuthStateChange((_event: string, session: { user: { email?: string } } | null) => {
+    } = client.auth.onAuthStateChange((_event: string, session: { user: { email?: string } } | null) => {
       if (!mounted) return
       if (session?.user) {
         setAuthState("signed-in")
@@ -85,6 +82,7 @@ export function NavAuthButton() {
 
     return () => {
       mounted = false
+      clearTimeout(timeout)
       subscription.unsubscribe()
     }
   }, [supabase])
@@ -141,7 +139,7 @@ export function NavAuthButton() {
             </div>
             <div className="h-px bg-border/60" />
             <Link
-              href="/confidential-ai"
+              href="/chat"
               onClick={() => setMenuOpen(false)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
             >
@@ -149,7 +147,7 @@ export function NavAuthButton() {
               Confidential Chat
             </Link>
             <Link
-              href="/personal-agents"
+              href="/agents"
               onClick={() => setMenuOpen(false)}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
             >

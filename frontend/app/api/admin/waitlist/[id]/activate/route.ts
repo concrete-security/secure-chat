@@ -70,7 +70,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const appUrl = resolveAppUrl(request)
-  const redirectTo = `${appUrl}/sign-in?redirect=/confidential-ai`
+  const redirectTo = `${appUrl}/sign-in?redirect=/chat`
 
   const { data: linkData, error: linkError } = await serviceRole.auth.admin.generateLink({
     type: "magiclink",
