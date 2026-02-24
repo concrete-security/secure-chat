@@ -2,7 +2,8 @@ import type { AtlasVerificationResult } from "@/lib/atlas-attestation"
 
 export const AVAILABLE_MODELS = [
   { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6" },
-  { id: "openai/gpt-oss-120b", label: "GPT OSS 120B" },
+  { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { id: "openai/gpt-oss-120b", label: "Confidential 120B" },
 ] as const
 
 export type Message = {
