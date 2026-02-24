@@ -6,6 +6,14 @@ import { Button } from "@/components/ui/button"
 import { RefreshCw } from "lucide-react"
 import { useWorkspace } from "./workspace-provider"
 
+function formatDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return parsed.toLocaleString()
+}
+
 export function SecurityDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const {
     manifest,
@@ -22,7 +30,12 @@ export function SecurityDrawer({ open, onOpenChange }: { open: boolean; onOpenCh
     passkeyStatus,
     passkeyLoading,
     passkeyError,
+    passkeyNotice,
+    passkeyEnrollBusy,
+    passkeyResetBusy,
     passkeysSatisfied,
+    handleEnrollPasskey,
+    handleResetPasskeys,
     loadPasskeyStatus,
     connectionMode,
     transportError,
@@ -153,11 +166,38 @@ export function SecurityDrawer({ open, onOpenChange }: { open: boolean; onOpenCh
           <section>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Passkeys</h3>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void loadPasskeyStatus()} disabled={passkeyLoading}>
-                <RefreshCw className={`h-3.5 w-3.5 ${passkeyLoading ? "animate-spin" : ""}`} />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => void handleEnrollPasskey()}
+                  disabled={passkeyEnrollBusy || passkeyResetBusy || passkeyLoading}
+                >
+                  {passkeyEnrollBusy ? "Waiting..." : "Add Passkey"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    const confirmed = window.confirm(
+                      "Remove all registered passkeys for this account? If your CVM was provisioned with old passkeys, you may need to redeploy after re-enrolling.",
+                    )
+                    if (!confirmed) return
+                    void handleResetPasskeys()
+                  }}
+                  disabled={passkeyResetBusy || passkeyEnrollBusy || passkeyLoading}
+                >
+                  {passkeyResetBusy ? "Resetting..." : "Reset"}
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void loadPasskeyStatus()} disabled={passkeyLoading}>
+                  <RefreshCw className={`h-3.5 w-3.5 ${passkeyLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
             </div>
             {passkeyLoading ? <p className="mt-2 text-sm text-muted-foreground">Loading...</p> : null}
+            {passkeyNotice ? <p className="mt-2 text-sm text-emerald-600 dark:text-emerald-400">{passkeyNotice}</p> : null}
             {!passkeyLoading && passkeyStatus ? (
               <div className="mt-2 space-y-1.5 text-sm">
                 <p className={passkeysSatisfied ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}>
@@ -167,7 +207,7 @@ export function SecurityDrawer({ open, onOpenChange }: { open: boolean; onOpenCh
                   <ul className="space-y-1">
                     {passkeyStatus.passkeys.map((pk) => (
                       <li key={pk.id} className="text-xs text-muted-foreground font-mono">
-                        {pk.credentialIdB64Url.slice(0, 12)}... · {pk.createdAt}
+                        {pk.credentialIdB64Url.slice(0, 12)}... · {formatDate(pk.createdAt)}
                       </li>
                     ))}
                   </ul>

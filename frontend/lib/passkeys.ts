@@ -49,6 +49,11 @@ type RegisterVerifyResponse = {
   }
 }
 
+type DeletePasskeysResponse = {
+  deletedCount: number
+  count: number
+}
+
 export type PasskeyStatus = PasskeyStatusResponse
 
 function decodeBase64Url(value: string): ArrayBuffer {
@@ -169,5 +174,11 @@ export async function enrollPasskey(): Promise<RegisterVerifyResponse> {
         transports: toTransports(response),
       },
     }),
+  })
+}
+
+export async function resetPasskeys(): Promise<DeletePasskeysResponse> {
+  return apiFetch<DeletePasskeysResponse>("/api/passkeys?all=true", {
+    method: "DELETE",
   })
 }

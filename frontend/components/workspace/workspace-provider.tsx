@@ -10,7 +10,7 @@ import { createCvmTransport, type CvmTransport } from "@/lib/cvm/transport"
 import { authenticateOwnerWithPasskey, fetchOwnerStatus } from "@/lib/cvm/owner"
 import { fetchVaultStatus, lockVault } from "@/lib/cvm/vault"
 import { streamOpenClawResponses } from "@/lib/openclaw-chat"
-import { enrollPasskey, fetchPasskeyStatus, type PasskeyStatus } from "@/lib/passkeys"
+import { enrollPasskey, fetchPasskeyStatus, resetPasskeys, type PasskeyStatus } from "@/lib/passkeys"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
 import { isAuthSessionMissingError } from "@/lib/supabase/errors"
 import { AVAILABLE_MODELS } from "@/lib/workspace-types"
@@ -53,10 +53,13 @@ type WorkspaceContextValue = {
   passkeyStatus: PasskeyStatus | null
   passkeyLoading: boolean
   passkeyError: string | null
+  passkeyNotice: string | null
   passkeyEnrollBusy: boolean
+  passkeyResetBusy: boolean
   passkeysSatisfied: boolean
   passkeyEnrollmentRequired: boolean
   handleEnrollPasskey: () => Promise<void>
+  handleResetPasskeys: () => Promise<void>
   loadPasskeyStatus: () => Promise<void>
 
   // Chat
@@ -136,7 +139,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [passkeyStatus, setPasskeyStatus] = useState<PasskeyStatus | null>(null)
   const [passkeyLoading, setPasskeyLoading] = useState(true)
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
+  const [passkeyNotice, setPasskeyNotice] = useState<string | null>(null)
   const [passkeyEnrollBusy, setPasskeyEnrollBusy] = useState(false)
+  const [passkeyResetBusy, setPasskeyResetBusy] = useState(false)
 
   const passkeysSatisfied = passkeyStatus ? passkeyStatus.count >= passkeyStatus.minRequired : false
   const passkeyEnrollmentRequired = passkeyStatus !== null && !passkeysSatisfied
@@ -193,6 +198,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setPasskeyStatus(status)
     } catch (error) {
       setPasskeyStatus(null)
+      setPasskeyNotice(null)
       setPasskeyError(getErrorMessage(error))
     } finally {
       setPasskeyLoading(false)
@@ -286,13 +292,39 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const handleEnrollPasskey = useCallback(async () => {
     setPasskeyEnrollBusy(true)
     setPasskeyError(null)
+    setPasskeyNotice(null)
     try {
-      await enrollPasskey()
+      const result = await enrollPasskey()
       await Promise.all([loadPasskeyStatus(), loadManifest()])
+      if (result.created) {
+        if (typeof result.count === "number") {
+          setPasskeyNotice(`Passkey added successfully (${result.count}/${result.minRequired}).`)
+        } else {
+          setPasskeyNotice("Passkey added successfully.")
+        }
+      } else {
+        setPasskeyNotice("Passkey is already registered for this user.")
+      }
     } catch (error) {
       setPasskeyError(getErrorMessage(error))
     } finally {
       setPasskeyEnrollBusy(false)
+    }
+  }, [loadManifest, loadPasskeyStatus])
+
+  const handleResetPasskeys = useCallback(async () => {
+    setPasskeyResetBusy(true)
+    setPasskeyError(null)
+    setPasskeyNotice(null)
+    try {
+      const result = await resetPasskeys()
+      await Promise.all([loadPasskeyStatus(), loadManifest()])
+      const suffix = result.deletedCount === 1 ? "" : "s"
+      setPasskeyNotice(`Removed ${result.deletedCount} passkey${suffix}.`)
+    } catch (error) {
+      setPasskeyError(getErrorMessage(error))
+    } finally {
+      setPasskeyResetBusy(false)
     }
   }, [loadManifest, loadPasskeyStatus])
 
@@ -540,10 +572,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       passkeyStatus,
       passkeyLoading,
       passkeyError,
+      passkeyNotice,
       passkeyEnrollBusy,
+      passkeyResetBusy,
       passkeysSatisfied,
       passkeyEnrollmentRequired,
       handleEnrollPasskey,
+      handleResetPasskeys,
       loadPasskeyStatus,
       messages,
       input,
@@ -578,10 +613,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       passkeyStatus,
       passkeyLoading,
       passkeyError,
+      passkeyNotice,
       passkeyEnrollBusy,
+      passkeyResetBusy,
       passkeysSatisfied,
       passkeyEnrollmentRequired,
       handleEnrollPasskey,
+      handleResetPasskeys,
       loadPasskeyStatus,
       messages,
       input,

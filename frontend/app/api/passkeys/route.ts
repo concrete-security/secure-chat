@@ -84,3 +84,91 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    ensureSameOrigin(request)
+  } catch (error) {
+    if (error instanceof CrossOriginRequestError) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
+    throw error
+  }
+
+  try {
+    const client = await createSupabaseServerClient()
+    const user = await getAuthUser(client)
+    if (!user) {
+      throw new AuthenticatedAccessError("Authentication required", 401)
+    }
+
+    const clientIp = getClientIp(request)
+    try {
+      await enforceRateLimit(`passkeys:delete:${user.id}:${clientIp}`, 20, 60_000)
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 429, headers: { "Retry-After": String(error.retryAfter) } },
+        )
+      }
+      throw error
+    }
+
+    const requestUrl = new URL(request.url)
+    const passkeyId = requestUrl.searchParams.get("passkeyId")?.trim() ?? ""
+    const deleteAll = requestUrl.searchParams.get("all")?.trim().toLowerCase() === "true"
+
+    if (!deleteAll && passkeyId.length === 0) {
+      return NextResponse.json({ error: "Specify passkeyId or all=true." }, { status: 400 })
+    }
+
+    const service = createSupabaseServiceRoleClient() as any
+    let deleteQuery = service.from("user_passkeys").delete().eq("user_id", user.id)
+    if (!deleteAll) {
+      deleteQuery = deleteQuery.eq("id", passkeyId)
+    }
+
+    const deleteResp = await deleteQuery.select("id")
+    if (deleteResp.error) {
+      if (isMissingUserPasskeysTable(deleteResp.error)) {
+        return NextResponse.json(
+          { error: "Passkey enrollment table is missing. Apply frontend/supabase/schema.sql." },
+          { status: 500 },
+        )
+      }
+      throw new Error(`Failed to delete passkeys: ${deleteResp.error.message}`)
+    }
+
+    const deleted = (deleteResp.data as Array<{ id: string }> | null) ?? []
+    if (!deleteAll && deleted.length === 0) {
+      return NextResponse.json({ error: "Passkey not found." }, { status: 404 })
+    }
+
+    const countResp = await service
+      .from("user_passkeys")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+
+    if (countResp.error) {
+      if (isMissingUserPasskeysTable(countResp.error)) {
+        return NextResponse.json(
+          { error: "Passkey enrollment table is missing. Apply frontend/supabase/schema.sql." },
+          { status: 500 },
+        )
+      }
+      throw new Error(`Failed to count remaining passkeys: ${countResp.error.message}`)
+    }
+
+    return NextResponse.json({
+      deletedCount: deleted.length,
+      count: countResp.count ?? 0,
+    })
+  } catch (error) {
+    if (error instanceof AuthenticatedAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    const message = error instanceof Error ? error.message : "Failed to delete passkeys"
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}

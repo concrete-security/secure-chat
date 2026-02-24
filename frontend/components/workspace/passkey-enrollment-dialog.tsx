@@ -11,8 +11,16 @@ import {
 } from "@/components/ui/dialog"
 import { useWorkspace } from "./workspace-provider"
 
+function formatDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return parsed.toLocaleString()
+}
+
 export function PasskeyEnrollmentDialog() {
-  const { passkeyStatus, passkeysSatisfied, passkeyEnrollBusy, passkeyError, handleEnrollPasskey } =
+  const { passkeyStatus, passkeysSatisfied, passkeyEnrollBusy, passkeyError, passkeyNotice, handleEnrollPasskey } =
     useWorkspace()
 
   if (!passkeyStatus || passkeysSatisfied) return null
@@ -39,11 +47,12 @@ export function PasskeyEnrollmentDialog() {
             <ul className="space-y-1 text-center">
               {passkeyStatus.passkeys.map((pk) => (
                 <li key={pk.id} className="text-xs text-muted-foreground font-mono">
-                  {pk.credentialIdB64Url.slice(0, 12)}... · {pk.createdAt}
+                  {pk.credentialIdB64Url.slice(0, 12)}... · {formatDate(pk.createdAt)}
                 </li>
               ))}
             </ul>
           ) : null}
+          {passkeyNotice ? <p className="text-sm text-center text-emerald-600 dark:text-emerald-400">{passkeyNotice}</p> : null}
           {passkeyError ? <p className="text-sm text-center text-destructive">{passkeyError}</p> : null}
           <Button onClick={() => void handleEnrollPasskey()} disabled={passkeyEnrollBusy} className="w-full">
             {passkeyEnrollBusy ? "Waiting for passkey..." : "Add Passkey"}
