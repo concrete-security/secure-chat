@@ -17,7 +17,8 @@ export async function middleware(request: NextRequest) {
       const pathname = request.nextUrl.pathname
       if (
         pathname.startsWith("/chat") ||
-        (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist"))
+        (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist")) ||
+        pathname.startsWith("/apps/agents")
       ) {
         return NextResponse.redirect(new URL("/sign-in?auth=required", request.url))
       }
@@ -49,7 +50,8 @@ export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   if (
     pathname.startsWith("/chat") ||
-    (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist"))
+    (pathname.startsWith("/agents") && !pathname.startsWith("/agents/waitlist")) ||
+    pathname.startsWith("/apps/agents")
   ) {
     try {
       const { data: { user } } = await supabase.auth.getUser()

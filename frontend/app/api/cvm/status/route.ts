@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { AuthenticatedAccessError, requireBetaUser } from "@/lib/auth"
-import { getUserCvmAssignment } from "@/lib/cvm/control-plane"
+import { getUserCvmAssignment } from "@/lib/apps/agents/control-plane"
 import { CrossOriginRequestError, ensureSameOrigin } from "@/lib/security/origin"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 

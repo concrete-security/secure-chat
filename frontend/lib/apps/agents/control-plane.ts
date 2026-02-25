@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto"
 
 import { logAuditEvent } from "@/lib/security/audit"
-import type { AttestationPolicy, CvmManifest, ModelRoutingPolicy, UserCvmAssignment } from "@/lib/cvm/types"
-import { computeExpectedComposeHash, computeOwnerKeysetHash } from "@/lib/cvm/hash"
+import type { AttestationPolicy, CvmManifest, ModelRoutingPolicy, UserCvmAssignment } from "./types"
+import { computeExpectedComposeHash, computeOwnerKeysetHash } from "./hash"
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/service-role"
 import type { CvmInstanceRow, ModelBackendMode, UserModelBackendRow, UserPasskeyRow } from "@/lib/supabase/types"
 

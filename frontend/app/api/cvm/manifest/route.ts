@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 
 import { AuthenticatedAccessError, requireBetaUser } from "@/lib/auth"
-import { buildCvmManifestForUser, buildDevFallbackManifest } from "@/lib/cvm/control-plane"
+import { buildCvmManifestForUser, buildDevFallbackManifest } from "@/lib/apps/agents/control-plane"
 import { CrossOriginRequestError, ensureSameOrigin } from "@/lib/security/origin"
 import { getClientIp } from "@/lib/security/request"
 import { enforceRateLimit, RateLimitError } from "@/lib/security/rate-limit"

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation"
 
 import { isPlaywrightAuthBypassEnabled } from "@/lib/auth"
 import { buildAtlasVerifiedResult, buildLocalDevResult } from "@/lib/atlas-attestation"
-import { type CvmManifest, type OwnerStatus, type VaultStatus } from "@/lib/cvm/types"
-import { createCvmTransport, type CvmTransport } from "@/lib/cvm/transport"
-import { authenticateOwnerWithPasskey, fetchOwnerStatus } from "@/lib/cvm/owner"
-import { fetchVaultStatus, lockVault } from "@/lib/cvm/vault"
+import { type CvmManifest } from "@/lib/apps/agents/types"
+import { createCvmTransport, type CvmTransport } from "@/lib/apps/agents/transport"
+import { type OwnerStatus, type VaultStatus } from "@/lib/apps/agents/types"
+import { authenticateOwnerWithPasskey, fetchOwnerStatus } from "@/lib/apps/agents/owner"
+import { fetchVaultStatus, lockVault } from "@/lib/apps/agents/vault"
 import { streamOpenClawResponses } from "@/lib/openclaw-chat"
 import { enrollPasskey, fetchPasskeyStatus, resetPasskeys, type PasskeyStatus } from "@/lib/passkeys"
 import { createSupabaseBrowserClient } from "@/lib/supabase/client"
@@ -72,6 +73,9 @@ type WorkspaceContextValue = {
   selectedModel: string
   setSelectedModel: (value: string) => void
   sendMessage: (event: FormEvent<HTMLFormElement>) => Promise<void>
+
+  // Transport
+  transportFetch: ((input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>) | null
 
   // Derived
   securityStatus: SecurityStatus
@@ -589,6 +593,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       selectedModel,
       setSelectedModel,
       sendMessage,
+      transportFetch: transportRef.current?.fetch ?? null,
       securityStatus,
       handleSignOut,
     }),

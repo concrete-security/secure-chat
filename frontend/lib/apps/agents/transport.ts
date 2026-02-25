@@ -1,4 +1,4 @@
-import type { CvmManifest } from "@/lib/cvm/types"
+import type { CvmManifest } from "./types"
 
 export type CvmTransport = {
   mode: "atlas_required" | "local_dev_non_attested"

@@ -42,6 +42,15 @@ export type CvmManifest = {
   modelRoutingPolicy: ModelRoutingPolicy
 }
 
+export type UserCvmAssignment = {
+  userId: string
+  cvmId: string
+  baseUrl: string
+  state: CvmInstanceState
+  attestationPolicy: AttestationPolicy
+  modelRoutingPolicy: ModelRoutingPolicy
+}
+
 export type VaultStatus = {
   initialized: boolean
   claimed?: boolean
@@ -54,13 +63,4 @@ export type OwnerStatus = {
   claim_epoch: number | null
   owner_keyset_hash: string | null
   initialized: boolean
-}
-
-export type UserCvmAssignment = {
-  userId: string
-  cvmId: string
-  baseUrl: string
-  state: CvmInstanceState
-  attestationPolicy: AttestationPolicy
-  modelRoutingPolicy: ModelRoutingPolicy
 }

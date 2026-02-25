@@ -1,4 +1,4 @@
-import type { CvmManifest } from "@/lib/cvm/types"
+import type { CvmManifest } from "@/lib/apps/agents/types"
 
 export function getErrorMessage(error: unknown) {
   if (error instanceof Error && error.message.trim().length > 0) {
