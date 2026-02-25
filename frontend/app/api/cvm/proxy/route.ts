@@ -9,12 +9,12 @@ function isProxyEnabled() {
 }
 
 function getBaseUrl() {
-  return (process.env.CVM_DEFAULT_BASE_URL?.trim() || "https://localhost").replace(/\/+$/, "")
+  return (process.env.PRIVATE_AGENT_DEFAULT_BASE_URL?.trim() || "https://localhost").replace(/\/+$/, "")
 }
 
 function shouldUseInsecureTls(baseUrl: string) {
   if (process.env.NODE_ENV === "production") return false
-  if (process.env.CVM_PROXY_TLS_INSECURE !== "true") return false
+  if (process.env.PRIVATE_AGENT_PROXY_TLS_INSECURE !== "true") return false
   return baseUrl.startsWith("https://localhost") || baseUrl.startsWith("https://127.0.0.1")
 }
 

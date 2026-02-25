@@ -17,7 +17,6 @@ Umbra is Concrete Security's marketing site and secure workspace for routing sen
 - Provider settings are kept entirely in the browser (localStorage for base/model/label, sessionStorage for bearer tokens) and proxied through `/api/chat/completions` so secrets never touch the server code.
 - RA-TLS (Remote Attestation TLS) establishes a cryptographically verified connection to the TEE via WebSocket proxy. The WASM-based `ratls-wasm` library performs TLS handshake and attestation verification entirely in the browser.
 - The UI blocks prompts until RA-TLS connection is established and attestation verification succeeds, showing TEE type and TCB status.
-- Optional guest throttling (`NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS`) limits anonymous visitors to a single session before requiring Supabase auth.
 
 ### Authentication & waitlist flows
 - `/sign-in` renders the Supabase email/password form plus a waitlist request form that hits the same `/api/waitlist` endpoint.
@@ -147,17 +146,24 @@ pnpm build && pnpm start
 ### Confidential provider defaults
 | Name | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_VLLM_BASE_URL` | Optional | Default provider base URL shown in the provider settings card. |
-| `NEXT_PUBLIC_VLLM_MODEL` | Optional | Default model identifier. |
-| `NEXT_PUBLIC_VLLM_PROVIDER_NAME` | Optional | Friendly provider name used in the UI badges. |
+| `NEXT_PUBLIC_PROVIDER_BASE_URL` | Optional | Default provider base URL shown in the provider settings card. |
+| `NEXT_PUBLIC_PROVIDER_MODEL` | Optional | Default model identifier. |
+| `NEXT_PUBLIC_PROVIDER_NAME` | Optional | Friendly provider name used in the UI badges. |
 | `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT` | Optional | Overrides `lib/system-prompt.ts` without editing the file. |
 | `NEXT_PUBLIC_DEFAULT_MAX_TOKENS` | Optional | Default `max_tokens` (defaults to 4098). |
 | `NEXT_PUBLIC_DEFAULT_TEMPERATURE` | Optional | Default `temperature` (defaults to 0.7). |
 
+### Private Agent defaults (server-side)
+| Name | Required | Description |
+| --- | --- | --- |
+| `PRIVATE_AGENT_DEFAULT_BASE_URL` | Optional | Default base URL for private-agent CVM routing/proxy in local/dev workflows. |
+| `PRIVATE_AGENT_BASE_DOMAIN` | Optional | Domain suffix used when provisioning per-user private-agent endpoints (default `cvm.local`). |
+| `PRIVATE_AGENT_PROXY_TLS_INSECURE` | Dev only | When set to `true`, allows self-signed TLS for localhost/127.0.0.1 private-agent proxy calls. |
+
 ### RA-TLS & attestation
 | Name | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_RATLS_PROXY_URL` | Required for live attestation | WebSocket proxy URL for RA-TLS connections (e.g., `wss://proxy.example.com`). The proxy bridges WebSocket to TCP for the TEE. |
+| `NEXT_PUBLIC_ATLAS_PROXY_URL` | Required for live attestation | WebSocket proxy URL for RA-TLS connections (e.g., `wss://proxy.example.com`). The proxy bridges WebSocket to TCP for the TEE. |
 | `NEXT_PUBLIC_ATTESTATION_TEST_MODE` | Optional | When `true`, skips real attestation verification (used by Playwright). |
 
 ### Email & feedback
@@ -166,11 +172,6 @@ pnpm build && pnpm start
 | `RESEND_API_KEY` | Required to send mail | Used by `lib/email/resend.ts`. Without it, emails are skipped (logged in dev). |
 | `RESEND_FROM_EMAIL` | Optional | Overrides the default `Concrete Security <onboarding@resend.dev>` sender. |
 | `RESEND_TO_EMAIL_FEEDBACK` | ✅ if `/api/feedback` is enabled | Destination inbox for feedback submissions. |
-
-### Runtime toggles
-| Name | Description |
-| --- | --- |
-| `NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS` | When `true`, anonymous visitors get a single confidential session before sign-in is required. |
 
 ## Supabase & authentication notes
 - Supabase clients (`lib/supabase/client.ts`, `server.ts`, `route-handler.ts`, `service-role.ts`) centralize initialization and fail early when envs are missing.
@@ -191,14 +192,14 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 
 1. **`lib/ratls-client.ts`** wraps the `ratls-wasm` WASM module with lazy loading and browser-only execution. Key exports:
    - `createRatlsClient(config, onAttestation)` - Creates a fetch-compatible function that performs RA-TLS handshake
-   - `getRatlsProxyUrl()` - Returns the configured proxy URL from `NEXT_PUBLIC_RATLS_PROXY_URL`
+   - `getRatlsProxyUrl()` - Returns the configured proxy URL from `NEXT_PUBLIC_ATLAS_PROXY_URL`
    - `deriveTargetHost(baseUrl)` - Extracts host:port from provider URL
    - `isRatlsConfigured()` - Checks if RA-TLS is enabled
    - `parseAppComposeServices(policy)` - Parses docker-compose.yml from policy to extract service images
    - `getImageUrl(image, digest?)` - Generates GHCR or Docker Hub links for container images
 
 2. **Connection flow:**
-   - Browser connects via WebSocket to the RA-TLS proxy (`NEXT_PUBLIC_RATLS_PROXY_URL`)
+   - Browser connects via WebSocket to the RA-TLS proxy (`NEXT_PUBLIC_ATLAS_PROXY_URL`)
    - Proxy bridges WebSocket to TCP, forwarding raw bytes to the TEE
    - WASM client performs TLS 1.3 handshake over the proxied connection
    - Client fetches TDX quote from TEE and verifies attestation using Intel DCAP

@@ -104,8 +104,8 @@ Use Conventional Commits: `feat(frontend): ...`, `fix(auth): ...`, `chore(cvm): 
 ### Frontend
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — Supabase auth
 - `FORM_TOKEN_SECRET` — HMAC key for form tokens
-- `NEXT_PUBLIC_ATTESTATION_BASE_URL` — Attestation service URL
-- `NEXT_PUBLIC_VLLM_BASE_URL`, `NEXT_PUBLIC_VLLM_MODEL` — Default provider settings
+- `NEXT_PUBLIC_ATLAS_PROXY_URL` — aTLS WebSocket proxy URL
+- `NEXT_PUBLIC_PROVIDER_BASE_URL`, `NEXT_PUBLIC_PROVIDER_MODEL` — Default provider settings
 
 ### CVM
 - `EKM_SHARED_SECRET` — HMAC key for EKM header validation (must match nginx and attestation service)

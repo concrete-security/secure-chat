@@ -207,11 +207,13 @@ function isMissingUserPasskeysTable(error: { message?: string; code?: string } |
 
 function buildDevFallbackAssignment(userId: string): UserCvmAssignment {
   const baseUrl = (
-    process.env.CVM_DEFAULT_BASE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_OPENCLAW_BASE_URL?.trim() ||
+    process.env.PRIVATE_AGENT_DEFAULT_BASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_PROVIDER_BASE_URL?.trim() ||
     "https://localhost"
   ).replace(/\/+$/, "")
-  const defaultModel = process.env.NEXT_PUBLIC_OPENCLAW_MODEL?.trim() || DEFAULT_REMOTE_MODEL
+  const defaultModel =
+    process.env.NEXT_PUBLIC_PROVIDER_MODEL?.trim() ||
+    DEFAULT_REMOTE_MODEL
 
   return {
     userId,
@@ -447,8 +449,8 @@ export async function provisionCvmForUser(params: {
   const ownerUserHandleHash = ownerPasskeys.length > 0 ? inferOwnerUserHandleHash(ownerPasskeys) : null
   const expectedAppCompose = buildExpectedAppCompose(ownerKeysetHash, ownerUserHandleHash)
 
-  const defaultBaseUrl = process.env.CVM_DEFAULT_BASE_URL?.trim()
-  const domain = process.env.CVM_BASE_DOMAIN?.trim() || "cvm.local"
+  const defaultBaseUrl = process.env.PRIVATE_AGENT_DEFAULT_BASE_URL?.trim()
+  const domain = process.env.PRIVATE_AGENT_BASE_DOMAIN?.trim() || "cvm.local"
   const slug = `user-${sanitizeSlugComponent(params.userId)}-${randomUUID().slice(0, 8)}`
   const baseUrl = params.baseUrl?.trim() || defaultBaseUrl || `https://${slug}.${domain}`
 

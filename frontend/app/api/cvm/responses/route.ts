@@ -33,7 +33,7 @@ function isAllowedBaseUrl(baseUrl: string) {
 
 function shouldUseInsecureLocalTls(baseUrl: string) {
   if (process.env.NODE_ENV === "production") return false
-  if (process.env.CVM_PROXY_TLS_INSECURE !== "true") return false
+  if (process.env.PRIVATE_AGENT_PROXY_TLS_INSECURE !== "true") return false
   return baseUrl.startsWith("https://localhost") || baseUrl.startsWith("https://127.0.0.1")
 }
 
