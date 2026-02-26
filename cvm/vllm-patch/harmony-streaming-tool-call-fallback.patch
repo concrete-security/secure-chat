@@ -1,0 +1,99 @@
+--- a/vllm/entrypoints/openai/serving_chat.py
++++ b/vllm/entrypoints/openai/serving_chat.py
+@@ -547,6 +547,7 @@
+                 get_streamable_parser_for_assistant() for _ in range(num_choices)
+             ]
+             harmony_tools_streamed = [False] * num_choices
++            harmony_token_ids = [[] for _ in range(num_choices)]
+         tools_streamed = [False] * num_choices
+
+         if isinstance(request.tool_choice, ChatCompletionNamedToolChoiceParam):
+@@ -739,6 +740,7 @@
+                         delta_text = ""
+                         for token_id in output.token_ids:
+                             harmony_parser.process(token_id)
++                            harmony_token_ids[i].append(token_id)
+                             delta_text += harmony_parser.last_content_delta or ""
+                         cur_channel = harmony_parser.current_channel
+                         cur_recipient = harmony_parser.current_recipient
+@@ -1194,6 +1196,33 @@
+                                 ]
+                             )
+
++                        # Harmony can occasionally reach finish with no
++                        # streamed tool delta even though the full token
++                        # stream contains a valid function call.  Recover
++                        # by re-parsing the accumulated harmony tokens once
++                        # at finish.
++                        if self.use_harmony and not harmony_tools_streamed[i]:
++                            recovered_tool_calls = (
++                                self._extract_harmony_tool_calls_streaming_fallback(
++                                    request=request,
++                                    tokenizer=tokenizer,
++                                    token_ids=harmony_token_ids[i],
++                                )
++                            )
++                            if recovered_tool_calls:
++                                delta_message = DeltaMessage(
++                                    content=(
++                                        delta_message.content
++                                        if delta_message else None
++                                    ),
++                                    reasoning=(
++                                        delta_message.reasoning
++                                        if delta_message else None
++                                    ),
++                                    tool_calls=recovered_tool_calls,
++                                )
++                                harmony_tools_streamed[i] = True
++
+                         # Send the finish response for each request.n only once
+                         # In OpenAI's API, when a tool is called, the
+                         # finish_reason is:
+@@ -1756,6 +1785,46 @@
+             and request.tool_choice in ["auto", None]
+         )
+
++    def _extract_harmony_tool_calls_streaming_fallback(
++        self,
++        request,
++        tokenizer,
++        token_ids,
++    ) -> list:
++        """Recover tool calls from accumulated harmony tokens at finish."""
++        if not request.tools or self.tool_parser is None:
++            return []
++
++        try:
++            tool_parser = self.tool_parser(tokenizer)
++            tool_call_info = tool_parser.extract_tool_calls(
++                "",
++                request=request,
++                token_ids=token_ids,
++            )
++        except Exception:
++            import logging
++            logging.getLogger(__name__).exception(
++                "Error extracting harmony tool calls at finish."
++            )
++            return []
++
++        if not tool_call_info.tools_called:
++            return []
++
++        return [
++            DeltaToolCall(
++                id=tool_call.id,
++                type=tool_call.type,
++                index=index,
++                function=DeltaFunctionCall(
++                    name=tool_call.function.name,
++                    arguments=tool_call.function.arguments,
++                ),
++            )
++            for index, tool_call in enumerate(tool_call_info.tool_calls)
++        ]
++
+     def _should_check_for_unstreamed_tool_arg_tokens(
+         self,
+         delta_message: DeltaMessage | None,

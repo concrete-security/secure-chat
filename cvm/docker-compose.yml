@@ -1,6 +1,6 @@
 services:
   vllm:
-    image: vllm/vllm-openai:v0.13.0
+    image: ghcr.io/concrete-security/vllm-openai:v0.13.0-harmony-fix
     container_name: vllm
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
