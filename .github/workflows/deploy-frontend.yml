@@ -23,6 +23,9 @@ on:
       - ready_for_review
     branches:
       - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/deploy-frontend.yml"
   workflow_dispatch:
     inputs:
       branch:
