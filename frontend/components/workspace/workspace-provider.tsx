@@ -76,6 +76,7 @@ type WorkspaceContextValue = {
 
   // Transport
   transportFetch: ((input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>) | null
+  transportBindingHex: string | null
 
   // Derived
   securityStatus: SecurityStatus
@@ -594,6 +595,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setSelectedModel,
       sendMessage,
       transportFetch: transportRef.current?.fetch ?? null,
+      transportBindingHex: transportRef.current?.transportBindingHex ?? null,
       securityStatus,
       handleSignOut,
     }),

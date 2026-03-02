@@ -4,6 +4,7 @@ import type { CvmManifest } from "./types"
 export type CvmTransport = {
   mode: "atlas_required" | "local_dev_non_attested"
   channelBindingSatisfied: boolean
+  transportBindingHex: string
   fetch: (input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>
 }
 
@@ -131,6 +132,7 @@ async function createAtlasTransport(manifest: CvmManifest): Promise<CvmTransport
   return {
     mode: "atlas_required",
     channelBindingSatisfied: true,
+    transportBindingHex,
     fetch: (input, init) => {
       const normalizedPath = normalizePath(String(input))
       return atlsFetch(normalizedPath, withTransportBinding(normalizedPath, init, transportBindingHex))
@@ -143,6 +145,7 @@ function createLocalDevTransport(_manifest: CvmManifest): CvmTransport {
   return {
     mode: "local_dev_non_attested",
     channelBindingSatisfied: false,
+    transportBindingHex,
     fetch: (input, init) => {
       const normalizedPath = normalizePath(String(input))
       const boundInit = withTransportBinding(normalizedPath, init, transportBindingHex)

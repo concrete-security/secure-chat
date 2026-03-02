@@ -1,9 +1,10 @@
 /**
- * Generate the JavaScript code that gets injected into the blob: URL iframe.
+ * Generate the JavaScript code that gets injected into the admin iframe.
  * This script:
  * 1. Waits for a MessageChannel handshake from the parent
  * 2. Overrides window.fetch to route through the channel
  * 3. Overrides window.WebSocket to route through the channel
+ * Both fetch and WebSocket calls are queued if they arrive before the bridge handshake.
  */
 export function generateIframeBootstrapScript(nonce: string): string {
   return `
@@ -11,18 +12,45 @@ export function generateIframeBootstrapScript(nonce: string): string {
   "use strict";
   var NONCE = ${JSON.stringify(nonce)};
   var parentPort = null;
+  var authToken = null;
   var pendingFetches = new Map();
   var wsInstances = new Map();
   var idCounter = 0;
 
   function nextId() { return "req_" + (++idCounter); }
 
+  // --- Queues for calls that arrive before the bridge handshake ---
+  var fetchQueue = [];
+  var wsQueue = [];
+
   // --- MessageChannel handshake ---
   window.addEventListener("message", function onHandshake(event) {
     if (event.data && event.data.type === "bridge-handshake" && event.data.nonce === NONCE) {
       parentPort = event.ports[0];
       parentPort.onmessage = handleParentMessage;
+      authToken = event.data.authToken || null;
       window.removeEventListener("message", onHandshake);
+      console.log("[bridge] handshake complete, draining queues (fetch=" + fetchQueue.length + ", ws=" + wsQueue.length + ")");
+      // Drain queued fetch calls — inject auth into requests parsed before handshake
+      fetchQueue.forEach(function(item) {
+        if (authToken && !item.args.headers["authorization"] && !item.args.headers["Authorization"]) {
+          item.args.headers["Authorization"] = "Bearer " + authToken;
+        }
+        doFetch(item.args.url, item.args.method, item.args.headers, item.args.body)
+          .then(item.resolve, item.reject);
+      });
+      fetchQueue.length = 0;
+      // Drain queued WebSocket opens
+      wsQueue.forEach(function(item) {
+        parentPort.postMessage({
+          type: "ws-open",
+          id: item.id,
+          nonce: NONCE,
+          url: item.url,
+          protocols: item.protocols,
+        });
+      });
+      wsQueue.length = 0;
     }
   });
 
@@ -73,20 +101,8 @@ export function generateIframeBootstrapScript(nonce: string): string {
   }
 
   // --- Fetch Override ---
-  window.fetch = function(input, init) {
-    if (!parentPort) {
-      return Promise.reject(new Error("Admin bridge not ready"));
-    }
-    var url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-    var method = (init && init.method) || "GET";
-    var headers = {};
-    if (init && init.headers) {
-      var h = new Headers(init.headers);
-      h.forEach(function(v, k) { headers[k] = v; });
-    }
-    var body = (init && init.body) ? String(init.body) : null;
+  function doFetch(url, method, headers, body) {
     var id = nextId();
-
     return new Promise(function(resolve, reject) {
       pendingFetches.set(id, { resolve: resolve, reject: reject });
       parentPort.postMessage({
@@ -104,6 +120,60 @@ export function generateIframeBootstrapScript(nonce: string): string {
           reject(new Error("Fetch timeout"));
         }
       }, 30000);
+    });
+  }
+
+  // The admin UI runs at /admin/ on the CVM but is proxied through /api/cvm/admin/.
+  // The <base> tag causes the browser to resolve relative URLs against the proxy prefix.
+  // Strip it and restore the CVM-native path so the bridge routes correctly.
+  var PROXY_PREFIX = "/api/cvm/admin/";
+  function rewriteUrl(url) {
+    try {
+      var u = new URL(url);
+      if (u.pathname.startsWith(PROXY_PREFIX)) {
+        return "/admin/" + u.pathname.slice(PROXY_PREFIX.length) + u.search;
+      }
+      if (u.pathname === "/api/cvm/admin") {
+        return "/admin/" + u.search;
+      }
+      // Admin UI connects WebSocket to its own origin (root "/").
+      // Map to /admin/ since that's the CVM's WebSocket handler path.
+      if (u.pathname === "/" || u.pathname === "") {
+        return "/admin/" + u.search;
+      }
+      return u.pathname + u.search;
+    } catch(e) {}
+    if (url.startsWith(PROXY_PREFIX)) {
+      return "/admin/" + url.slice(PROXY_PREFIX.length);
+    }
+    return url;
+  }
+
+  function parseFetchArgs(input, init) {
+    var url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    url = rewriteUrl(url);
+    var method = (init && init.method) || "GET";
+    var headers = {};
+    if (init && init.headers) {
+      var h = new Headers(init.headers);
+      h.forEach(function(v, k) { headers[k] = v; });
+    }
+    var body = (init && init.body) ? String(init.body) : null;
+    // Inject auth token if not already present
+    if (authToken && !headers["authorization"] && !headers["Authorization"]) {
+      headers["Authorization"] = "Bearer " + authToken;
+    }
+    return { url: url, method: method, headers: headers, body: body };
+  }
+
+  window.fetch = function(input, init) {
+    var args = parseFetchArgs(input, init);
+    console.log("[bridge] fetch:", args.method, args.url);
+    if (parentPort) {
+      return doFetch(args.url, args.method, args.headers, args.body);
+    }
+    return new Promise(function(resolve, reject) {
+      fetchQueue.push({ args: args, resolve: resolve, reject: reject });
     });
   };
 
@@ -130,15 +200,21 @@ export function generateIframeBootstrapScript(nonce: string): string {
     });
 
     wsInstances.set(id, ws);
+    var protoList = Array.isArray(protocols) ? protocols : protocols ? [protocols] : [];
 
+    var rewrittenUrl = rewriteUrl(url);
+    console.log("[bridge] WebSocket:", url, "->", rewrittenUrl, "parentPort:", !!parentPort);
     if (parentPort) {
       parentPort.postMessage({
         type: "ws-open",
         id: id,
         nonce: NONCE,
-        url: url,
-        protocols: Array.isArray(protocols) ? protocols : protocols ? [protocols] : [],
+        url: rewrittenUrl,
+        protocols: protoList,
       });
+    } else {
+      // Queue until bridge is ready
+      wsQueue.push({ id: id, url: rewrittenUrl, protocols: protoList });
     }
 
     return ws;

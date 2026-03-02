@@ -60,6 +60,7 @@ export class AtlsBridge {
   private async handleFetch(msg: FetchRequest) {
     if (msg.nonce !== this.config.nonce) return
 
+    console.log("[AtlsBridge] fetch:", msg.method, msg.url)
     try {
       const resp = await this.config.atlsFetch(msg.url, {
         method: msg.method,
@@ -94,6 +95,7 @@ export class AtlsBridge {
   private async handleWsOpen(msg: WsOpenRequest) {
     if (msg.nonce !== this.config.nonce) return
 
+    console.log("[AtlsBridge] ws-open:", msg.url, "factory:", !!this.config.createAtlsWebSocket)
     if (!this.config.createAtlsWebSocket) {
       this.port?.postMessage({
         type: "ws-open-result",

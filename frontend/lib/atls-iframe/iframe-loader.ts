@@ -2,6 +2,23 @@ import { generateIframeBootstrapScript } from "./iframe-scripts"
 
 type FetchImpl = (url: string) => Promise<Response>
 
+function escapeForInlineScript(code: string): string {
+  // Prevent the HTML parser from seeing </script> inside inlined JS.
+  // In JS, <\/script> is identical to </script> (\/ is an identity escape),
+  // but the HTML parser won't treat <\/ as a closing tag.
+  return code.replace(/<\/script/gi, "<\\/script")
+}
+
+function stripSrcAttribute(scriptTag: string): string {
+  // Remove </script> and trailing >, strip src="..." attribute, reassemble
+  return scriptTag
+    .replace(/<\/script>\s*$/i, "")
+    .replace(/>\s*$/, "")
+    .replace(/\s+src=["'][^"']*["']/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+}
+
 function resolveUrl(href: string, basePath: string): string {
   if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("data:")) {
     return href
@@ -25,8 +42,9 @@ export async function inlineAssets(
     const url = resolveUrl(src, basePath)
     try {
       const resp = await fetchImpl(url)
-      const code = await resp.text()
-      html = html.replace(match[0], `<script>${code}</script>`)
+      const code = escapeForInlineScript(await resp.text())
+      const openTag = stripSrcAttribute(match[0])
+      html = html.replace(match[0], `${openTag}>${code}</script>`)
     } catch {
       // Leave original tag if fetch fails
     }
@@ -101,7 +119,7 @@ export async function createAdminBlobUrl(
 
   html = await inlineAssets(html, basePath, fetchImpl)
 
-  const bootstrapScript = `<script>${generateIframeBootstrapScript(nonce)}</script>`
+  const bootstrapScript = `<script>${escapeForInlineScript(generateIframeBootstrapScript(nonce))}</script>`
   if (html.includes("</head>")) {
     html = html.replace("</head>", bootstrapScript + "</head>")
   } else {

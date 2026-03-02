@@ -75,6 +75,7 @@ async function proxyRequest(request: Request): Promise<Response> {
   const authHeader = request.headers.get("authorization")
   if (authHeader) {
     headers["Authorization"] = authHeader
+    console.log("[cvm-proxy]", { cvmPath, authToken: `${authHeader.slice(0, 20)}...` })
   }
 
   let body: string | undefined
