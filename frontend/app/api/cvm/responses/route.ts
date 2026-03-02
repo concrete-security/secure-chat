@@ -22,16 +22,22 @@ function isDevResponsesProxyEnabled() {
   return process.env.NODE_ENV !== "production" && process.env.CVM_ALLOW_DEV_RESPONSES_PROXY !== "false"
 }
 
+function isCvmTlsPassthrough(baseUrl: string) {
+  return /-443s\.dstack-pha-[^.]+\.phala\.network/.test(baseUrl)
+}
+
 function isAllowedBaseUrl(baseUrl: string) {
   return (
     baseUrl.startsWith("https://localhost") ||
     baseUrl.startsWith("https://127.0.0.1") ||
     baseUrl.startsWith("http://localhost") ||
-    baseUrl.startsWith("http://127.0.0.1")
+    baseUrl.startsWith("http://127.0.0.1") ||
+    isCvmTlsPassthrough(baseUrl)
   )
 }
 
 function shouldUseInsecureLocalTls(baseUrl: string) {
+  if (isCvmTlsPassthrough(baseUrl)) return true
   if (process.env.NODE_ENV === "production") return false
   if (process.env.PRIVATE_AGENT_PROXY_TLS_INSECURE !== "true") return false
   return baseUrl.startsWith("https://localhost") || baseUrl.startsWith("https://127.0.0.1")

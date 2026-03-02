@@ -12,6 +12,12 @@ function getBaseUrl() {
   return (process.env.PRIVATE_AGENT_DEFAULT_BASE_URL?.trim() || "https://localhost").replace(/\/+$/, "")
 }
 
+function isCvmTlsPassthrough(baseUrl: string) {
+  // dstack -443s endpoints use TLS passthrough to the CVM's cert-manager,
+  // which serves a self-signed cert. Trust comes from TDX attestation, not the CA chain.
+  return /-443s\.dstack-pha-[^.]+\.phala\.network/.test(baseUrl)
+}
+
 function shouldUseInsecureTls(baseUrl: string) {
   if (process.env.NODE_ENV === "production") return false
   if (process.env.PRIVATE_AGENT_PROXY_TLS_INSECURE !== "true") return false
@@ -78,7 +84,7 @@ async function proxyRequest(request: Request): Promise<Response> {
 
   try {
     let upstream: Response
-    if (shouldUseInsecureTls(baseUrl)) {
+    if (isCvmTlsPassthrough(baseUrl) || shouldUseInsecureTls(baseUrl)) {
       upstream = await fetchInsecure(upstreamUrl, { method: request.method, headers, body })
     } else {
       upstream = await fetch(upstreamUrl, { method: request.method, headers, body, cache: "no-store" })

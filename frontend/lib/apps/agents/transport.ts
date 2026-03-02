@@ -1,3 +1,4 @@
+import { createAtlasClient, type AtlasPolicy } from "@/lib/atlas-client"
 import type { CvmManifest } from "./types"
 
 export type CvmTransport = {
@@ -6,7 +7,6 @@ export type CvmTransport = {
   fetch: (input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>
 }
 
-type AtlasModule = Record<string, unknown>
 const SESSION_TOKEN_PATTERN = /^([a-f0-9]{32})(?:\.([a-f0-9]{64}))?$/i
 const TRANSPORT_BINDING_BODY_PATHS = new Set([
   "/owner/auth/verify",
@@ -105,56 +105,6 @@ function withTransportBinding(path: string, init: RequestInit | undefined, trans
   }
 }
 
-async function loadAtlasBrowserModule(): Promise<AtlasModule> {
-  const configuredModule = process.env.NEXT_PUBLIC_ATLAS_BROWSER_MODULE?.trim()
-  const moduleName = configuredModule && configuredModule.length > 0 ? configuredModule : "@concrete-security/atlas-wasm"
-
-  try {
-    const dynamicImport = new Function("moduleName", "return import(moduleName)") as (
-      moduleName: string,
-    ) => Promise<unknown>
-    return (await dynamicImport(moduleName)) as AtlasModule
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    throw new Error(`Failed to load Atlas browser module "${moduleName}": ${reason}`)
-  }
-}
-
-async function initAtlasModule(mod: AtlasModule): Promise<void> {
-  const initFn =
-    (typeof mod.init === "function" ? (mod.init as () => Promise<unknown> | unknown) : null) ??
-    (typeof mod.default === "function" ? (mod.default as () => Promise<unknown> | unknown) : null)
-
-  if (!initFn) return
-  await Promise.resolve(initFn())
-}
-
-function createAtlasFetch(mod: AtlasModule, options: {
-  proxyUrl: string
-  targetHost: string
-  serverName: string
-  policy: Record<string, unknown>
-}): (path: string, init?: RequestInit) => Promise<Response> {
-  const factory =
-    (typeof mod.createAtlsFetch === "function"
-      ? (mod.createAtlsFetch as (params: Record<string, unknown>) => (path: string, init?: RequestInit) => Promise<Response>)
-      : null) ??
-    (typeof mod.createRatlsFetch === "function"
-      ? (mod.createRatlsFetch as (params: Record<string, unknown>) => (path: string, init?: RequestInit) => Promise<Response>)
-      : null)
-
-  if (!factory) {
-    throw new Error("Atlas module does not export createAtlsFetch/createRatlsFetch.")
-  }
-
-  return factory({
-    proxyUrl: options.proxyUrl,
-    targetHost: options.targetHost,
-    serverName: options.serverName,
-    policy: options.policy,
-  })
-}
-
 async function createAtlasTransport(manifest: CvmManifest): Promise<CvmTransport> {
   const atlasProxyUrl = manifest.connectionPolicy.atlasProxyUrl
   const atlasPolicy = manifest.connectionPolicy.atlasPolicy
@@ -168,13 +118,11 @@ async function createAtlasTransport(manifest: CvmManifest): Promise<CvmTransport
 
   const { serverName, targetHost } = targetHostFromBaseUrl(manifest.baseUrl)
   const transportBindingHex = generateTransportBindingHex()
-  const atlasModule = await loadAtlasBrowserModule()
-  await initAtlasModule(atlasModule)
-  const atlsFetch = createAtlasFetch(atlasModule, {
+  const atlsFetch = await createAtlasClient({
     proxyUrl: atlasProxyUrl,
     targetHost,
     serverName,
-    policy: atlasPolicy,
+    policy: atlasPolicy as AtlasPolicy,
   })
 
   // Establish and validate the attested channel before subsequent CVM calls.
