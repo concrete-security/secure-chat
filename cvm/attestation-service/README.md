@@ -31,31 +31,27 @@ The attestation service **does not** handle TLS connections directly. Instead, i
 
 To prevent header forgery attacks (e.g., if the reverse proxy is compromised or an attacker bypasses it), EKM headers are cryptographically signed with HMAC-SHA256.
 
-### Configuration
+### HMAC Key Derivation
 
-**CRITICAL**: Set `EKM_SHARED_SECRET` to a cryptographically secure random value:
+The HMAC key is **derived inside the TEE** at startup using dstack's deterministic key derivation (`get_key("ekm/hmac-key/v1")`). Both nginx (cert-manager) and this service derive the same key from the same dstack path, so they agree without any external secret injection. This ensures the operator who deploys the CVM never sees the HMAC key.
 
-```bash
-# Generate a secure secret (at least 32 bytes)
-EKM_SHARED_SECRET=$(openssl rand -hex 32)
-```
+In dev/test environments without a dstack socket, the service falls back to the `EKM_SHARED_SECRET` environment variable.
 
 ### Security Properties
 
 - **Format**: EKM headers use the format `{ekm_hex}:{hmac_hex}` (129 characters total)
 - **Validation**: HMAC is validated using constant-time comparison to prevent timing attacks
 - **Defense in Depth**: TEE/Network isolation (proxy and service running inside the same TEE, and the attestation service is only accessible to the proxy) + HMAC validation provide multiple security layers
-- **Secret Requirements**:
-  - Minimum 32 bytes (256 bits) recommended
-  - Must match the secret configured in the reverse proxy (e.g., nginx)
-  - Rotate periodically (recommended)
-  - Never commit to version control
+- **Key Properties**:
+  - Derived from TEE identity via dstack -- never leaves the CVM
+  - Deterministic: same compose hash + key path = same key
+  - Operator never sees the key (zero-trust deployment)
 
 ### How It Works
 
-1. Reverse proxy extracts TLS EKM from the client connection
-2. Reverse proxy computes `HMAC-SHA256(ekm_hex, EKM_SHARED_SECRET)`
-3. Reverse proxy forwards header as `{ekm_hex}:{hmac_hex}`
+1. Both nginx and attestation service derive the same HMAC key from dstack at startup
+2. Reverse proxy extracts TLS EKM from the client connection
+3. Reverse proxy computes `HMAC-SHA256(ekm_raw, hmac_key)` and forwards as `{ekm_hex}:{hmac_hex}`
 4. Attestation service validates HMAC before trusting EKM
 5. Invalid signatures return HTTP 403 Forbidden
 
