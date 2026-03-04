@@ -19,12 +19,12 @@ Example:
 import base64
 import hashlib
 import json
-import os
-import re
 import secrets
 import sys
 import urllib.request
 import urllib.error
+
+from dotenv import get_key, set_key
 
 def fetch_quote(hostname: str) -> dict:
     """Fetch TDX quote from the TEE."""
@@ -93,29 +93,12 @@ def parse_event_log(event_log_str: str) -> dict:
 
     return result
 
-def read_env_file(env_path: str) -> str:
-    """Read an env file, returning empty string if it doesn't exist."""
-    if os.path.exists(env_path):
-        with open(env_path, "r") as f:
-            return f.read()
-    return ""
-
-
-def get_current_value(content: str, key: str) -> str | None:
-    """Extract the current value of a key from env file content."""
-    match = re.search(rf'^{re.escape(key)}=["\']?(.*?)["\']?\s*$', content, re.MULTILINE)
-    return match.group(1) if match else None
-
-
-def apply_env_update(content: str, key: str, value: str) -> str:
-    """Apply a single env var update to the content string."""
-    pattern = re.compile(rf'^{re.escape(key)}=.*$', re.MULTILINE)
-    replacement = f'{key}="{value}"'
-    if pattern.search(content):
-        return pattern.sub(replacement, content)
-    if content and not content.endswith('\n'):
-        content += '\n'
-    return content + replacement + '\n'
+def ensure_env_file(env_path: str) -> None:
+    """Create the env file if it doesn't exist."""
+    try:
+        open(env_path, "x").close()
+    except FileExistsError:
+        pass
 
 
 def format_value_preview(key: str, value: str) -> str:
@@ -345,14 +328,14 @@ def main():
             app_compose_b64 = base64.b64encode(app_compose_str.encode()).decode()
             env_updates["NEXT_PUBLIC_ATLAS_APP_COMPOSE"] = app_compose_b64
 
-        content = read_env_file(args.update_env)
+        ensure_env_file(args.update_env)
         applied = 0
         skipped = 0
         unchanged = 0
 
         print()
         for key, new_value in env_updates.items():
-            old_value = get_current_value(content, key)
+            old_value = get_key(args.update_env, key)
 
             if old_value == new_value:
                 unchanged += 1
@@ -374,17 +357,13 @@ def main():
             else:
                 answer = input(f"  Apply {short_key}? [Y/n] ").strip().lower()
             if answer in ("", "y", "yes"):
-                content = apply_env_update(content, key, new_value)
+                set_key(args.update_env, key, new_value)
                 applied += 1
                 print(f"  -> applied")
             else:
                 skipped += 1
                 print(f"  -> skipped")
             print()
-
-        if applied > 0:
-            with open(args.update_env, "w") as f:
-                f.write(content)
 
         print(f"Done: {applied} updated, {skipped} skipped, {unchanged} unchanged.")
         return
