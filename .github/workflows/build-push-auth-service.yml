@@ -174,6 +174,37 @@ jobs:
           echo "**Tags:** \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Digest:** \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
 
+  update-compose:
+    name: Update docker-compose.yml digest
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4
+
+      - name: Update image digest in docker-compose.yml
+        run: |
+          IMAGE="ghcr.io/${{ env.IMAGE_NAME }}"
+          NEW_DIGEST="${{ needs.build-and-push.outputs.image-digest }}"
+          sed -i "s|${IMAGE}@sha256:[a-f0-9]*|${IMAGE}@${NEW_DIGEST}|g" cvm/docker-compose.yml
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: auto-update/auth-service-digest
+          title: "chore(cvm): update auth-service image digest"
+          body: |
+            Auto-generated PR to update `auth-service` image digest in `cvm/docker-compose.yml`.
+
+            **New digest:** `${{ needs.build-and-push.outputs.image-digest }}`
+            **Triggered by:** ${{ github.sha }}
+          commit-message: "chore(cvm): update auth-service image digest"
+          delete-branch: true
+
   provenance:
     needs: [build-and-push]
     permissions:
