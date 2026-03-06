@@ -17,6 +17,7 @@ type AtlsBridgeConfig = {
   createAtlsWebSocket?: (url: string) => Promise<{
     send: (data: string | ArrayBuffer) => void
     onMessage: (cb: (data: string | ArrayBuffer) => void) => void
+    onClose?: (cb: (code: number, reason: string) => void) => void
     close: (code?: number, reason?: string) => void
   }>
 }
@@ -115,6 +116,16 @@ export class AtlsBridge {
           type: "ws-frame-to-iframe",
           id: msg.id,
           data,
+        })
+      })
+
+      ws.onClose?.((code, reason) => {
+        this.activeWebSockets.delete(msg.id)
+        this.port?.postMessage({
+          type: "ws-close",
+          id: msg.id,
+          code,
+          reason,
         })
       })
 

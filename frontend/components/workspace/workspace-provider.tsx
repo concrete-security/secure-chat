@@ -282,7 +282,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     transportKeyRef.current = null
     transportPromiseRef.current = null
     setTransportError(null)
-  }, [manifest?.baseUrl, manifest?.connectionPolicy.mode, manifest?.connectionPolicy.atlasProxyUrl])
+  }, [manifest?.baseUrl, manifest?.connectionPolicy.mode, manifest?.connectionPolicy.atlasProxyUrl, manifest?.connectionPolicy.atlasPolicy])
 
   useEffect(() => {
     if (!isPlaywrightAuthBypassEnabled()) {

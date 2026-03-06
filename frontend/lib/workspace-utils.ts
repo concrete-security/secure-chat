@@ -175,6 +175,14 @@ export async function fetchManifest(): Promise<CvmManifest> {
   if (!payload.connectionPolicy || typeof payload.connectionPolicy.mode !== "string") {
     throw new Error("Control-plane manifest is missing connection policy")
   }
+  if (payload.connectionPolicy.mode === "atlas_required") {
+    if (typeof payload.connectionPolicy.atlasProxyUrl !== "string" || payload.connectionPolicy.atlasProxyUrl.trim().length === 0) {
+      throw new Error("Control-plane manifest atlas_required mode is missing atlasProxyUrl")
+    }
+    if (!asRecord(payload.connectionPolicy.atlasPolicy)) {
+      throw new Error("Control-plane manifest atlas_required mode is missing atlasPolicy")
+    }
+  }
 
   return payload as CvmManifest
 }

@@ -8,6 +8,27 @@ export type CvmTransport = {
   fetch: (input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>
 }
 
+/**
+ * Serialize requests through a single HTTP/1.1 connection.
+ * AtlsHttp uses HTTP/1.1 keep-alive over one WebSocket — concurrent requests
+ * on the same connection cause a WASM panic. This queue ensures at most one
+ * in-flight request at a time.
+ */
+function createSerializedFetch(
+  inner: (input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response>,
+): (input: string | URL | RequestInfo, init?: RequestInit) => Promise<Response> {
+  let pending: Promise<unknown> = Promise.resolve()
+
+  return (input, init) => {
+    const next = pending.then(
+      () => inner(input, init),
+      () => inner(input, init),
+    )
+    pending = next.then(() => undefined, () => undefined)
+    return next
+  }
+}
+
 const SESSION_TOKEN_PATTERN = /^([a-f0-9]{32})(?:\.([a-f0-9]{64}))?$/i
 const TRANSPORT_BINDING_BODY_PATHS = new Set([
   "/owner/auth/verify",
@@ -107,11 +128,20 @@ function withTransportBinding(path: string, init: RequestInit | undefined, trans
 }
 
 async function createAtlasTransport(manifest: CvmManifest): Promise<CvmTransport> {
-  const atlasProxyUrl = manifest.connectionPolicy.atlasProxyUrl
-  const atlasPolicy = manifest.connectionPolicy.atlasPolicy
+  if (manifest.connectionPolicy.mode !== "atlas_required") {
+    throw new Error("Atlas transport requires manifest connectionPolicy.mode=atlas_required.")
+  }
 
-  if (!atlasProxyUrl || !atlasPolicy) {
-    throw new Error("Atlas configuration is missing from manifest connectionPolicy.")
+  const { atlasProxyUrl, atlasPolicy } = manifest.connectionPolicy
+
+  if (!atlasProxyUrl) {
+    throw new Error("Atlas proxy URL is missing from manifest connectionPolicy.")
+  }
+  if (!isRecord(atlasPolicy)) {
+    throw new Error("Atlas policy is missing or invalid in manifest connectionPolicy.")
+  }
+  if (atlasPolicy.type !== "dstack_tdx") {
+    throw new Error('Atlas policy type must be "dstack_tdx".')
   }
   if (!manifest.baseUrl.startsWith("https://")) {
     throw new Error("Atlas mode requires an https:// CVM base URL.")
@@ -119,24 +149,38 @@ async function createAtlasTransport(manifest: CvmManifest): Promise<CvmTransport
 
   const { serverName, targetHost } = targetHostFromBaseUrl(manifest.baseUrl)
   const transportBindingHex = generateTransportBindingHex()
+
+  // If app_compose is stored as a raw JSON string (to preserve key ordering through
+  // Supabase JSONB which reorders keys), parse it back to an object for Atlas WASM.
+  const resolvedPolicy = { ...atlasPolicy } as Record<string, unknown>
+  if (typeof resolvedPolicy.app_compose === "string") {
+    try {
+      resolvedPolicy.app_compose = JSON.parse(resolvedPolicy.app_compose as string)
+    } catch {
+      // leave as-is if parsing fails
+    }
+  }
+
   const atlsFetch = await createAtlasClient({
     proxyUrl: atlasProxyUrl,
     targetHost,
     serverName,
-    policy: atlasPolicy as AtlasPolicy,
+    policy: resolvedPolicy as AtlasPolicy,
   })
 
   // Establish and validate the attested channel before subsequent CVM calls.
   await atlsFetch("/owner/status", { method: "GET", cache: "no-store" })
 
+  const serializedFetch = createSerializedFetch((input, init) => {
+    const normalizedPath = normalizePath(String(input))
+    return atlsFetch(normalizedPath, withTransportBinding(normalizedPath, init, transportBindingHex))
+  })
+
   return {
     mode: "atlas_required",
     channelBindingSatisfied: true,
     transportBindingHex,
-    fetch: (input, init) => {
-      const normalizedPath = normalizePath(String(input))
-      return atlsFetch(normalizedPath, withTransportBinding(normalizedPath, init, transportBindingHex))
-    },
+    fetch: serializedFetch,
   }
 }
 

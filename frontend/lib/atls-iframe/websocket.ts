@@ -16,6 +16,7 @@ import {
 type AtlsWs = {
   send: (data: string | ArrayBuffer) => void
   onMessage: (cb: (data: string | ArrayBuffer) => void) => void
+  onClose?: (cb: (code: number, reason: string) => void) => void
   close: (code?: number, reason?: string) => void
 }
 
@@ -26,13 +27,10 @@ type AtlsWebSocketConfig = {
 }
 
 async function loadAttestedStream(): Promise<any> {
-  const configuredModule = process.env.NEXT_PUBLIC_ATLAS_BROWSER_MODULE?.trim()
-  const moduleName = configuredModule && configuredModule.length > 0 ? configuredModule : "@concrete-security/atlas-wasm"
-
-  const dynamicImport = new Function("moduleName", "return import(moduleName)") as (
-    moduleName: string,
-  ) => Promise<any>
-  const mod = await dynamicImport(moduleName)
+  const mod = await import("@concrete-security/atlas-wasm") as any
+  if (!mod.AttestedStream || typeof mod.AttestedStream.connect !== "function") {
+    throw new Error("Unsupported @concrete-security/atlas-wasm API: AttestedStream.connect missing")
+  }
   return mod.AttestedStream
 }
 
@@ -54,7 +52,9 @@ export function createAtlsWebSocketFactory(
     // Connect via aTLS
     const wsUrl = `${config.proxyUrl}?target=${encodeURIComponent(config.targetHost)}`
     const serverName = config.targetHost.split(":")[0]
+    console.log("[aTLS-WS] connecting:", { wsUrl, serverName, path })
     const stream = await AttestedStream.connect(wsUrl, serverName, config.policy)
+    console.log("[aTLS-WS] stream connected, sending upgrade for:", path)
 
     // Send HTTP Upgrade request
     const key = generateWebSocketKey()
@@ -84,6 +84,8 @@ export function createAtlsWebSocketFactory(
     }
     clearTimeout(upgradeTimeout)
 
+    console.log("[aTLS-WS] upgrade response:", { status: upgradeResult.status, headers: upgradeResult.headers, remainingBytes: upgradeResult.remaining.length })
+
     if (upgradeResult.status !== 101) {
       throw new Error(`WebSocket upgrade failed: ${upgradeResult.status}`)
     }
@@ -91,8 +93,19 @@ export function createAtlsWebSocketFactory(
     // Any remaining bytes after the HTTP response are WebSocket frames
     buffer = new Uint8Array(upgradeResult.remaining)
 
+    // Buffer messages that arrive before onMessage() is registered (race condition fix)
+    const messageQueue: Array<string | ArrayBuffer> = []
     let messageCallback: ((data: string | ArrayBuffer) => void) | null = null
+    let closeCallback: ((code: number, reason: string) => void) | null = null
     let closed = false
+
+    function dispatchMessage(data: string | ArrayBuffer) {
+      if (messageCallback) {
+        messageCallback(data)
+      } else {
+        messageQueue.push(data)
+      }
+    }
 
     // Start reading WebSocket frames
     const readLoop = async () => {
@@ -103,13 +116,20 @@ export function createAtlsWebSocketFactory(
           while (decoded) {
             buffer = buffer.slice(decoded.bytesConsumed)
             if (decoded.opcode === OPCODE_TEXT) {
-              messageCallback?.(new TextDecoder().decode(decoded.payload))
+              dispatchMessage(new TextDecoder().decode(decoded.payload))
             } else if (decoded.opcode === OPCODE_BINARY) {
-              messageCallback?.(decoded.payload.buffer as ArrayBuffer)
+              dispatchMessage(decoded.payload.buffer as ArrayBuffer)
             } else if (decoded.opcode === OPCODE_PING) {
               await stream.send(encodeFrame(OPCODE_PONG, decoded.payload, true))
             } else if (decoded.opcode === OPCODE_CLOSE) {
               closed = true
+              const code = decoded.payload.length >= 2
+                ? (decoded.payload[0] << 8) | decoded.payload[1]
+                : 1000
+              const reason = decoded.payload.length > 2
+                ? new TextDecoder().decode(decoded.payload.slice(2))
+                : ""
+              closeCallback?.(code, reason)
               return
             }
             decoded = decodeFrame(buffer)
@@ -119,6 +139,7 @@ export function createAtlsWebSocketFactory(
           const { value, done } = await reader.read()
           if (done) {
             closed = true
+            closeCallback?.(1001, "Stream closed")
             return
           }
           const newBuf = new Uint8Array(buffer.length + value.length)
@@ -126,8 +147,11 @@ export function createAtlsWebSocketFactory(
           newBuf.set(value, buffer.length)
           buffer = newBuf
         }
-      } catch {
+      } catch (err) {
         closed = true
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error("[aTLS-WS] readLoop error:", msg, err)
+        closeCallback?.(1006, msg || "Stream error")
       }
     }
 
@@ -147,6 +171,11 @@ export function createAtlsWebSocketFactory(
       },
       onMessage(cb) {
         messageCallback = cb
+        // Drain any messages that arrived before this was registered
+        messageQueue.splice(0).forEach(cb)
+      },
+      onClose(cb) {
+        closeCallback = cb
       },
       close(code = 1000, reason = "") {
         if (closed) return

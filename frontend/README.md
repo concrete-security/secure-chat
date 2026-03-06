@@ -18,6 +18,11 @@ Umbra is Concrete Security's marketing site and secure workspace for routing sen
 - RA-TLS (Remote Attestation TLS) establishes a cryptographically verified connection to the TEE via WebSocket proxy. The WASM-based `ratls-wasm` library performs TLS handshake and attestation verification entirely in the browser.
 - The UI blocks prompts until RA-TLS connection is established and attestation verification succeeds, showing TEE type and TCB status.
 
+### Personal Agents workspace (`app/agents/page.tsx`)
+- Uses `/api/cvm/manifest` to fetch user-assigned CVM routing + attestation metadata from Supabase.
+- In `atlas_required` mode, attestation proxy URL and Atlas policy are read from per-CVM fields (`cvm_instances.atlas_proxy_url` and `cvm_instances.atlas_policy`), not from global env vars.
+- In production, missing/invalid per-CVM Atlas config fails closed and blocks transport initialization.
+
 ### Authentication & waitlist flows
 - `/sign-in` renders the Supabase email/password form plus a waitlist request form that hits the same `/api/waitlist` endpoint.
 - `/admin/waitlist` allows admins to filter, annotate, and activate requests. Activation generates Supabase magic links, records invite metadata, and dispatches branded emails via Resend. Roles are granted automatically only after recipients verify their email.
@@ -160,10 +165,16 @@ pnpm build && pnpm start
 | `PRIVATE_AGENT_BASE_DOMAIN` | Optional | Domain suffix used when provisioning per-user private-agent endpoints (default `cvm.local`). |
 | `PRIVATE_AGENT_PROXY_TLS_INSECURE` | Dev only | When set to `true`, allows self-signed TLS for localhost/127.0.0.1 private-agent proxy calls. |
 
+Per-CVM Atlas settings for `/agents` are stored in Supabase (`cvm_instances.atlas_proxy_url`, `cvm_instances.atlas_policy`) and delivered through the manifest API.
+
 ### RA-TLS & attestation
 | Name | Required | Description |
 | --- | --- | --- |
 | `NEXT_PUBLIC_ATLAS_PROXY_URL` | Required for live attestation | WebSocket proxy URL for RA-TLS connections (e.g., `wss://proxy.example.com`). The proxy bridges WebSocket to TCP for the TEE. |
+| `NEXT_PUBLIC_ATLAS_EXPECTED_MRTD/RTMR0/RTMR1/RTMR2` | Legacy (`/chat` + `/confidential-ai`) | Static expected boot measurements for env-based policy mode. `/agents` does not use these values. |
+| `NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH` | Legacy (`/chat` + `/confidential-ai`) | Static OS image hash for env-based policy mode. `/agents` does not use this value. |
+| `NEXT_PUBLIC_ATLAS_APP_COMPOSE` | Legacy (`/chat` + `/confidential-ai`) | Base64-encoded app compose JSON for env-based policy mode. `/agents` does not use this value. |
+| `NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS` | Legacy (`/chat` + `/confidential-ai`) | Optional comma-separated allowed TCB statuses in env-based policy mode. |
 | `NEXT_PUBLIC_ATTESTATION_TEST_MODE` | Optional | When `true`, skips real attestation verification (used by Playwright). |
 
 ### Email & feedback
@@ -242,5 +253,34 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 - Update the Umbra persona in `lib/system-prompt.ts` or via `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT`.
 - Waitlist statuses are defined in `lib/waitlist.ts` (`requested → contacted → invited → activated → archived`).
 - Tailwind tokens are centralized in `styles/globals.css`. Prefer the CSS variables over hard-coded colors when creating new components.
+
+### Per-CVM Atlas policy sync (`/agents`)
+Use `frontend/scripts/sync-cvm-atlas-policy.py` to derive policy from a live TEE quote and update the CVM assigned to one user.
+`user_cvm_assignments` is one-CVM-per-user, so targeting by `--user-id` is the simplest operator flow.
+
+```bash
+# Optional: preload frontend envs for one-off shell sessions
+set -a
+source .env.local
+set +a
+
+# Dry-run (default)
+python3 scripts/sync-cvm-atlas-policy.py \
+  --user-id <supabase-user-id>
+
+# Apply update
+python3 scripts/sync-cvm-atlas-policy.py \
+  --user-id <supabase-user-id> \
+  --apply
+```
+
+Defaults:
+- CVM row is resolved from `user_cvm_assignments.user_id -> cvm_instances.id`.
+- TEE hostname defaults from `cvm_instances.base_url`.
+- Atlas proxy URL defaults to existing `cvm_instances.atlas_proxy_url`, then `CVM_ATLAS_PROXY_URL` / `NEXT_PUBLIC_ATLAS_PROXY_URL` (loaded from `.env.local` by default).
+
+Required auth for the script:
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`)
 
 With the environment configured and Supabase ready, run `pnpm dev`, open `http://localhost:3000`, and walk through the entire Umbra flow. Before opening a PR, run `pnpm lint`, `pnpm test:unit`, and `pnpm test:e2e` (or `make test`) to keep the quality gates green.

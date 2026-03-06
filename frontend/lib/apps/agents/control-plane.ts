@@ -221,6 +221,8 @@ function buildDevFallbackAssignment(userId: string): UserCvmAssignment {
     baseUrl,
     state: "ready",
     attestationPolicy: DEFAULT_ATTESTATION_POLICY,
+    atlasProxyUrl: null,
+    atlasPolicy: null,
     modelRoutingPolicy: {
       mode: "local",
       allowRemoteProviders: false,
@@ -243,28 +245,30 @@ function fallbackFromSchemaError(userId: string, context: string, error: { messa
   return buildDevFallbackAssignment(userId)
 }
 
-function parseAtlasPolicyJson(raw: string, envName: string): Record<string, unknown> {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "invalid JSON"
-    throw new Error(`${envName} must be valid JSON (${message}).`)
+export function parseAtlasPolicyFromCvmInstance(value: unknown, cvmId: string): Record<string, unknown> | null {
+  if (value === null || value === undefined) {
+    return null
   }
 
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error(`${envName} must be a JSON object.`)
+  const policy = asRecord(value)
+  if (!policy) {
+    throw new Error(`CVM ${cvmId} has invalid atlas_policy: expected JSON object.`)
   }
-  return parsed as Record<string, unknown>
+
+  if (policy.type !== "dstack_tdx") {
+    throw new Error(`CVM ${cvmId} has invalid atlas_policy.type: expected "dstack_tdx".`)
+  }
+
+  return policy
 }
 
-function buildConnectionPolicy(): CvmManifest["connectionPolicy"] {
-  const atlasProxyUrl = process.env.CVM_ATLAS_PROXY_URL?.trim() || process.env.NEXT_PUBLIC_ATLAS_PROXY_URL?.trim() || ""
-  const atlasPolicyRaw = process.env.CVM_ATLAS_POLICY_JSON?.trim() || ""
+export function buildConnectionPolicyForAssignment(assignment: UserCvmAssignment): CvmManifest["connectionPolicy"] {
   const forcedMode = process.env.CVM_CONNECTION_MODE?.trim()
   const mustRequireAtlas = process.env.NODE_ENV === "production" || forcedMode === "atlas_required"
+  const atlasProxyUrl = assignment.atlasProxyUrl?.trim() || ""
+  const atlasPolicy = assignment.atlasPolicy
 
-  if (!mustRequireAtlas) {
+  if (!mustRequireAtlas && (!atlasProxyUrl || !atlasPolicy)) {
     return {
       mode: "local_dev_non_attested",
       atlasProxyUrl: null,
@@ -273,16 +277,17 @@ function buildConnectionPolicy(): CvmManifest["connectionPolicy"] {
   }
 
   if (!atlasProxyUrl) {
-    throw new Error("CVM_ATLAS_PROXY_URL is required when Atlas is mandatory.")
+    throw new Error(`CVM ${assignment.cvmId} is missing atlas_proxy_url while Atlas attestation is required.`)
   }
-  if (!atlasPolicyRaw) {
-    throw new Error("CVM_ATLAS_POLICY_JSON is required when Atlas is mandatory.")
+
+  if (!atlasPolicy) {
+    throw new Error(`CVM ${assignment.cvmId} is missing atlas_policy while Atlas attestation is required.`)
   }
 
   return {
     mode: "atlas_required",
     atlasProxyUrl,
-    atlasPolicy: parseAtlasPolicyJson(atlasPolicyRaw, "CVM_ATLAS_POLICY_JSON"),
+    atlasPolicy,
   }
 }
 
@@ -349,13 +354,19 @@ export async function getUserCvmAssignment(userId: string): Promise<UserCvmAssig
     baseUrl: instance.base_url,
     state: instance.state,
     attestationPolicy: parseAttestationPolicy(instance.attestation_policy),
+    atlasProxyUrl: toNonEmptyString(instance.atlas_proxy_url),
+    atlasPolicy: parseAtlasPolicyFromCvmInstance(instance.atlas_policy, instance.id),
     modelRoutingPolicy: parseModelRoutingPolicy(backend),
   }
 }
 
 export function buildDevFallbackManifest(userId: string): CvmManifest {
   const assignment = buildDevFallbackAssignment(userId)
-  const connectionPolicy = buildConnectionPolicy()
+  const connectionPolicy: CvmManifest["connectionPolicy"] = {
+    mode: "local_dev_non_attested",
+    atlasProxyUrl: null,
+    atlasPolicy: null,
+  }
   return {
     cvmId: assignment.cvmId,
     baseUrl: assignment.baseUrl,
@@ -391,7 +402,7 @@ export async function buildCvmManifestForUser(params: { userId: string }): Promi
     baseUrl: assignment.baseUrl,
     expiresAt: null,
     attestationPolicy: assignment.attestationPolicy,
-    connectionPolicy: buildConnectionPolicy(),
+    connectionPolicy: buildConnectionPolicyForAssignment(assignment),
     openclaw: {
       responsesPath: "/v1/responses",
       toolsPath: "/tools/invoke",
@@ -519,6 +530,8 @@ export async function provisionCvmForUser(params: {
     baseUrl: instance.base_url,
     state: instance.state,
     attestationPolicy: parseAttestationPolicy(instance.attestation_policy),
+    atlasProxyUrl: toNonEmptyString(instance.atlas_proxy_url),
+    atlasPolicy: parseAtlasPolicyFromCvmInstance(instance.atlas_policy, instance.id),
     modelRoutingPolicy: {
       mode,
       allowRemoteProviders: mode !== "local",

@@ -41,6 +41,9 @@ export type AtlasPolicy = {
   allowed_tcb_status?: string[]
   /** Skip runtime verification - for development only */
   disable_runtime_verification?: boolean
+  /** Accept self-signed certificates during TLS handshake (defaults to true in the library).
+   *  TEEs generate self-signed certs; trust comes from attestation, not CA hierarchy. */
+  accept_self_signed_certs?: boolean
 }
 
 /**
@@ -50,6 +53,7 @@ export type AtlasPolicy = {
 export const DEV_POLICY: AtlasPolicy = {
   type: "dstack_tdx",
   disable_runtime_verification: true,
+  accept_self_signed_certs: true,
   allowed_tcb_status: ["UpToDate", "SWHardeningNeeded", "OutOfDate"],
 }
 

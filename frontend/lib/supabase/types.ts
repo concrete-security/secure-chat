@@ -30,6 +30,8 @@ export type CvmInstanceRow = {
   state: CvmInstanceState
   provider: string
   attestation_policy: Json
+  atlas_policy: Json | null
+  atlas_proxy_url: string | null
   endpoint_metadata: Json | null
   last_heartbeat_at: string | null
   retired_at: string | null

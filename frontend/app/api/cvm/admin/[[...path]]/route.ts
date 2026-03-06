@@ -5,7 +5,13 @@ import { generateIframeBootstrapScript } from "@/lib/atls-iframe/iframe-scripts"
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-function getBaseUrl() {
+function getBaseUrl(cookieValue?: string) {
+  if (cookieValue) {
+    const decoded = decodeURIComponent(cookieValue).trim()
+    if (decoded.startsWith("https://") || decoded.startsWith("http://")) {
+      return decoded.replace(/\/+$/, "")
+    }
+  }
   return (process.env.PRIVATE_AGENT_DEFAULT_BASE_URL?.trim() || "https://localhost").replace(/\/+$/, "")
 }
 
@@ -19,10 +25,9 @@ function needsInsecureTls(baseUrl: string) {
 
 async function fetchFromCvm(
   url: string,
+  baseUrl: string,
   options: { method: string; headers: Record<string, string>; body?: string },
 ): Promise<Response> {
-  const baseUrl = getBaseUrl()
-
   if (needsInsecureTls(baseUrl)) {
     const parsed = new URL(url)
     return new Promise<Response>((resolve, reject) => {
@@ -77,7 +82,7 @@ async function proxyAdmin(request: NextRequest, pathSegments: string[]): Promise
     return new Response("Not found", { status: 404 })
   }
 
-  const baseUrl = getBaseUrl()
+  const baseUrl = getBaseUrl(request.cookies.get("cvm-base-url")?.value)
   const cvmPath = "/admin/" + pathSegments.join("/")
   const upstreamUrl = `${baseUrl}${cvmPath}`
 
@@ -90,16 +95,16 @@ async function proxyAdmin(request: NextRequest, pathSegments: string[]): Promise
   const headers: Record<string, string> = {}
   if (sessionId && transportBinding) {
     headers["Authorization"] = `Bearer ${sessionId}.${transportBinding}`
-    console.log("[admin-proxy]", { cvmPath, token: `Bearer ${sessionId.slice(0, 8)}...${transportBinding.slice(-8)}` })
+    console.log("[admin-proxy]", { cvmPath, baseUrl, token: `Bearer ${sessionId.slice(0, 8)}...${transportBinding.slice(-8)}` })
   } else {
-    console.log("[admin-proxy]", { cvmPath, sessionId: sessionId ? "present" : "MISSING", transportBinding: transportBinding ? "present" : "MISSING" })
+    console.log("[admin-proxy]", { cvmPath, baseUrl, sessionId: sessionId ? "present" : "MISSING", transportBinding: transportBinding ? "present" : "MISSING" })
   }
   // Forward accept header
   const accept = request.headers.get("accept")
   if (accept) headers["Accept"] = accept
 
   try {
-    const upstream = await fetchFromCvm(upstreamUrl, { method: "GET", headers })
+    const upstream = await fetchFromCvm(upstreamUrl, baseUrl, { method: "GET", headers })
     if (!upstream.ok) {
       const body = await upstream.text()
       console.log("[admin-proxy] upstream error", { status: upstream.status, body: body.slice(0, 200), upstreamUrl })

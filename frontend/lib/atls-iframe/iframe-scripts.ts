@@ -203,6 +203,10 @@ export function generateIframeBootstrapScript(nonce: string): string {
     var protoList = Array.isArray(protocols) ? protocols : protocols ? [protocols] : [];
 
     var rewrittenUrl = rewriteUrl(url);
+    // Inject vault auth token as query parameter (CVM checks ?token= for WebSocket auth)
+    if (authToken && rewrittenUrl.indexOf("token=") === -1) {
+      rewrittenUrl += (rewrittenUrl.indexOf("?") === -1 ? "?" : "&") + "token=" + encodeURIComponent(authToken);
+    }
     console.log("[bridge] WebSocket:", url, "->", rewrittenUrl, "parentPort:", !!parentPort);
     if (parentPort) {
       parentPort.postMessage({

@@ -25,16 +25,26 @@ export type ModelRoutingPolicy = {
   remoteBaseUrl: string | null
 }
 
+export type AtlasRequiredConnectionPolicy = {
+  mode: "atlas_required"
+  atlasProxyUrl: string
+  atlasPolicy: Record<string, unknown>
+}
+
+export type LocalDevConnectionPolicy = {
+  mode: "local_dev_non_attested"
+  atlasProxyUrl: null
+  atlasPolicy: null
+}
+
+export type CvmConnectionPolicy = AtlasRequiredConnectionPolicy | LocalDevConnectionPolicy
+
 export type CvmManifest = {
   cvmId: string
   baseUrl: string
   expiresAt: string | null
   attestationPolicy: AttestationPolicy
-  connectionPolicy: {
-    mode: "atlas_required" | "local_dev_non_attested"
-    atlasProxyUrl: string | null
-    atlasPolicy: Record<string, unknown> | null
-  }
+  connectionPolicy: CvmConnectionPolicy
   openclaw: {
     responsesPath: string
     toolsPath?: string
@@ -48,6 +58,8 @@ export type UserCvmAssignment = {
   baseUrl: string
   state: CvmInstanceState
   attestationPolicy: AttestationPolicy
+  atlasProxyUrl: string | null
+  atlasPolicy: Record<string, unknown> | null
   modelRoutingPolicy: ModelRoutingPolicy
 }
 

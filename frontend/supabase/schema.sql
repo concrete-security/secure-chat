@@ -193,10 +193,18 @@ create table if not exists public.cvm_instances (
   state public.cvm_instance_state not null default 'provisioning',
   provider text not null default 'phala',
   attestation_policy jsonb not null default '{}'::jsonb,
+  atlas_policy jsonb,
+  atlas_proxy_url text,
   endpoint_metadata jsonb,
   last_heartbeat_at timestamptz,
   retired_at timestamptz
 );
+
+alter table public.cvm_instances
+  add column if not exists atlas_policy jsonb;
+
+alter table public.cvm_instances
+  add column if not exists atlas_proxy_url text;
 
 create table if not exists public.user_cvm_assignments (
   user_id uuid primary key references auth.users (id) on delete cascade,
