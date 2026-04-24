@@ -1,0 +1,75 @@
+--- a/vllm/entrypoints/anthropic/serving_messages.py
++++ b/vllm/entrypoints/anthropic/serving_messages.py
+@@ -365,11 +365,9 @@
+                             yield wrap_data_with_event(data, "message_delta")
+                             continue
+ 
+-                        if origin_chunk.choices[0].finish_reason is not None:
+-                            finish_reason = origin_chunk.choices[0].finish_reason
+-                            continue
+-
+-                        # content
++                        # content (process before finish_reason: harmony
++                        # tool-call fallback bundles delta.tool_calls with
++                        # finish_reason="tool_calls" in the same chunk)
+                         if origin_chunk.choices[0].delta.content is not None:
+                             if not content_block_started:
+                                 chunk = AnthropicStreamEvent(
+@@ -398,7 +396,8 @@
+                             continue
+ 
+                         # tool calls
+-                        elif len(origin_chunk.choices[0].delta.tool_calls) > 0:
++                        if (origin_chunk.choices[0].delta.tool_calls is not None
++                                and len(origin_chunk.choices[0].delta.tool_calls) > 0):
+                             tool_call = origin_chunk.choices[0].delta.tool_calls[0]
+                             if tool_call.id is not None:
+                                 if content_block_started:
+@@ -431,20 +430,43 @@
+                                 yield wrap_data_with_event(data, "content_block_start")
+                                 content_block_started = True
+ 
+-                            else:
++                                # The harmony fallback emits id AND arguments
++                                # in the same DeltaToolCall. Stream the args as
++                                # an input_json_delta so the tool_use block
++                                # isn't delivered with empty input.
++                                args = (
++                                    tool_call.function.arguments
++                                    if tool_call.function
++                                    else None
++                                )
++                                if args:
++                                    chunk = AnthropicStreamEvent(
++                                        index=content_block_index,
++                                        type="content_block_delta",
++                                        delta=AnthropicDelta(
++                                            type="input_json_delta",
++                                            partial_json=args,
++                                        ),
++                                    )
++                                    data = chunk.model_dump_json(exclude_unset=True)
++                                    yield wrap_data_with_event(data, "content_block_delta")
++
++                            elif tool_call.function is not None:
+                                 chunk = AnthropicStreamEvent(
+                                     index=content_block_index,
+                                     type="content_block_delta",
+                                     delta=AnthropicDelta(
+                                         type="input_json_delta",
+-                                        partial_json=tool_call.function.arguments
+-                                        if tool_call.function
+-                                        else None,
++                                        partial_json=tool_call.function.arguments,
+                                     ),
+                                 )
+                                 data = chunk.model_dump_json(exclude_unset=True)
+                                 yield wrap_data_with_event(data, "content_block_delta")
+                             continue
++
++                        if origin_chunk.choices[0].finish_reason is not None:
++                            finish_reason = origin_chunk.choices[0].finish_reason
++                            continue
+                 else:
+                     error_response = AnthropicStreamEvent(
+                         type="error",
