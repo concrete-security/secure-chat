@@ -9,3 +9,8 @@ COPY messages-tool-call-on-finish.patch /tmp/
 RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
     && patch -p1 -d "$SITE" < /tmp/messages-tool-call-on-finish.patch \
     && rm /tmp/messages-tool-call-on-finish.patch
+
+COPY messages-accept-thinking-blocks.patch /tmp/
+RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+    && patch -p1 -d "$SITE" < /tmp/messages-accept-thinking-blocks.patch \
+    && rm /tmp/messages-accept-thinking-blocks.patch

@@ -1,0 +1,45 @@
+--- a/vllm/entrypoints/anthropic/protocol.py
++++ b/vllm/entrypoints/anthropic/protocol.py
+@@ -34,7 +34,14 @@
+ class AnthropicContentBlock(BaseModel):
+     """Content block in message"""
+ 
+-    type: Literal["text", "image", "tool_use", "tool_result"]
++    type: Literal[
++        "text",
++        "image",
++        "tool_use",
++        "tool_result",
++        "thinking",
++        "redacted_thinking",
++    ]
+     text: str | None = None
+     # For image content
+     source: dict[str, Any] | None = None
+@@ -44,6 +51,13 @@
+     input: dict[str, Any] | None = None
+     content: str | list[dict[str, Any]] | None = None
+     is_error: bool | None = None
++    # Thinking blocks that clients (Claude Code, Anthropic SDK) replay in
++    # message history. The shim does not feed these to the backend model,
++    # but must accept them on input to avoid 400s on conversation replay.
++    thinking: str | None = None
++    signature: str | None = None
++    # For redacted_thinking blocks (opaque encrypted payload).
++    data: str | None = None
+ 
+ 
+ class AnthropicMessage(BaseModel):
+--- a/vllm/entrypoints/anthropic/serving_messages.py
++++ b/vllm/entrypoints/anthropic/serving_messages.py
+@@ -112,6 +112,10 @@
+                 tool_calls: list[dict[str, Any]] = []
+ 
+                 for block in msg.content:
++                    if block.type in ("thinking", "redacted_thinking"):
++                        # Clients replay thinking blocks in history; backend
++                        # model does not consume them, so drop silently.
++                        continue
+                     if block.type == "text" and block.text:
+                         content_parts.append({"type": "text", "text": block.text})
+                     elif block.type == "image" and block.source:
