@@ -4,3 +4,8 @@ COPY harmony-streaming-tool-call-fallback.patch /tmp/
 RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
     && patch -p1 -d "$SITE" < /tmp/harmony-streaming-tool-call-fallback.patch \
     && rm /tmp/harmony-streaming-tool-call-fallback.patch
+
+COPY anthropic-finish-chunk-tool-call.patch /tmp/
+RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") \
+    && patch -p1 -d "$SITE" < /tmp/anthropic-finish-chunk-tool-call.patch \
+    && rm /tmp/anthropic-finish-chunk-tool-call.patch
