@@ -104,8 +104,12 @@ Use Conventional Commits: `feat(frontend): ...`, `fix(auth): ...`, `chore(cvm): 
 ### Frontend
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — Supabase auth
 - `FORM_TOKEN_SECRET` — HMAC key for form tokens
-- `NEXT_PUBLIC_ATTESTATION_BASE_URL` — Attestation service URL
-- `NEXT_PUBLIC_VLLM_BASE_URL`, `NEXT_PUBLIC_VLLM_MODEL` — Default provider settings
+- `NEXT_PUBLIC_ATLAS_PROXY_URL` — aTLS WebSocket proxy URL
+- `NEXT_PUBLIC_PROVIDER_BASE_URL`, `NEXT_PUBLIC_PROVIDER_MODEL` — Default provider settings
+- `/agents` per-CVM Atlas settings now come from Supabase row fields, not global hash env vars:
+  - `public.cvm_instances.atlas_policy` (JSONB, must include `type: "dstack_tdx"`)
+  - `public.cvm_instances.atlas_proxy_url` (text)
+  - Production is fail-closed if either value is missing/invalid.
 
 ### CVM
 - `EKM_SHARED_SECRET` — HMAC key for EKM header validation (must match nginx and attestation service)
@@ -125,6 +129,9 @@ Use Conventional Commits: `feat(frontend): ...`, `fix(auth): ...`, `chore(cvm): 
 - Run relevant checks after edits before finishing.
 - Add or update tests for behavior changes.
 - Keep changes local to the touched subproject; do not mix unrelated frontend/CVM/monitoring edits.
+- For `/agents` CVM onboarding/backfills, prefer:
+  - `python3 frontend/scripts/get-tee-policy-values.py <hostname> --format policy-json`
+  - `python3 frontend/scripts/sync-cvm-atlas-policy.py --user-id <supabase-user-id> [--apply]`
 
 ## Safety
 

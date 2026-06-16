@@ -70,9 +70,9 @@ type ResolvedProviderConfig = {
   maxTokens: number
 }
 
-const defaultProviderApiBase = optionalEnv(process.env.NEXT_PUBLIC_VLLM_BASE_URL)
-const defaultModel = optionalEnv(process.env.NEXT_PUBLIC_VLLM_MODEL)
-const defaultProviderName = optionalEnv(process.env.NEXT_PUBLIC_VLLM_PROVIDER_NAME)
+const defaultProviderApiBase = optionalEnv(process.env.NEXT_PUBLIC_PROVIDER_BASE_URL)
+const defaultModel = optionalEnv(process.env.NEXT_PUBLIC_PROVIDER_MODEL)
+const defaultProviderName = optionalEnv(process.env.NEXT_PUBLIC_PROVIDER_NAME)
 const defaultSystemPrompt = optionalEnv(process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT) ?? systemPrompt
 const defaultMaxTokens = parseNumber(process.env.NEXT_PUBLIC_DEFAULT_MAX_TOKENS, 4098)
 const defaultTemperature = parseNumber(process.env.NEXT_PUBLIC_DEFAULT_TEMPERATURE, 0.7)

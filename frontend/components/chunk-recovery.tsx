@@ -16,7 +16,7 @@ export function ChunkRecovery() {
   const router = useRouter()
 
   useEffect(() => {
-    router.prefetch?.("/confidential-ai")
+    router.prefetch?.("/chat")
   }, [router])
 
   useEffect(() => {

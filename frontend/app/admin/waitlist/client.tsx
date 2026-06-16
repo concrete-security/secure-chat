@@ -28,11 +28,11 @@ const STATUS_LABEL: Record<WaitlistStatus, string> = {
 }
 
 const STATUS_TONE: Record<WaitlistStatus, string> = {
-  requested: "border-blue-200 bg-blue-50 text-blue-700",
-  contacted: "border-amber-200 bg-amber-50 text-amber-700",
-  invited: "border-violet-200 bg-violet-50 text-violet-700",
-  activated: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  archived: "border-neutral-200 bg-neutral-100 text-neutral-500",
+  requested: "border-info/40 bg-info/10 text-info",
+  contacted: "border-warning/40 bg-warning/10 text-warning",
+  invited: "border-primary/40 bg-primary/10 text-primary",
+  activated: "border-success/40 bg-success/10 text-success",
+  archived: "border-border bg-muted/30 text-muted-foreground",
 }
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -212,7 +212,7 @@ export default function AdminWaitlistClient() {
   }
 
   return (
-    <div className="min-h-screen bg-[#E2E2E2] px-6 pb-16 pt-10 text-[#08070B]">
+    <div className="min-h-screen bg-background px-6 pb-16 pt-10 text-foreground">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
@@ -220,26 +220,26 @@ export default function AdminWaitlistClient() {
               asChild
               variant="ghost"
               size="icon"
-              className="h-10 w-10 rounded-full border border-[#1B0986]/40 bg-white/90 text-[#1B0986] shadow-sm transition hover:bg-[#1B0986] hover:text-white"
+              className="h-10 w-10 rounded-full border border-primary/40 bg-card text-primary shadow-sm transition hover:bg-primary hover:text-primary-foreground"
             >
               <Link href="/" aria-label="Back to landing page">
                 <ArrowLeft className="h-5 w-5" />
               </Link>
             </Button>
-            <div className="text-xs font-semibold uppercase tracking-[0.32em] text-[#1F1E28]/60">
+            <div className="text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground">
               Early access
             </div>
           </div>
           <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
             <div>
-              <h1 className="text-3xl font-semibold tracking-tight">Umbra waitlist</h1>
-              <p className="mt-2 text-sm leading-6 text-[#1F1E28]/80">
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground">Umbra waitlist</h1>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 Review incoming requests and hand out access when teams are ready. Grant access when you want to
                 trigger an activation email, or mark contacted to keep your pipeline organised.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge className="rounded-full bg-[#1B0986] px-3 py-1 text-xs font-semibold text-white">
+              <Badge className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                 {entries.length} total
               </Badge>
               {statuses.map((status) => (
@@ -261,8 +261,8 @@ export default function AdminWaitlistClient() {
             onClick={() => setStatusFilter("")}
             className={`rounded-full px-3.5 py-1.5 text-sm font-medium transition ${
               statusFilter === ""
-                ? "bg-[#08070B] text-white shadow-[0_18px_40px_-28px_rgba(15,11,56,0.55)]"
-                : "bg-white text-[#1F1E28]/80 shadow-sm"
+                ? "bg-primary text-primary-foreground shadow-glow-primary"
+                : "bg-card text-muted-foreground shadow-sm hover:text-foreground"
             }`}
           >
             All stages
@@ -274,8 +274,8 @@ export default function AdminWaitlistClient() {
               onClick={() => setStatusFilter(status)}
               className={`rounded-full px-3.5 py-1.5 text-sm font-medium capitalize transition ${
                 statusFilter === status
-                  ? "bg-[#08070B] text-white shadow-[0_18px_40px_-28px_rgba(15,11,56,0.55)]"
-                  : "bg-white text-[#1F1E28]/80 shadow-sm"
+                  ? "bg-primary text-primary-foreground shadow-glow-primary"
+                  : "bg-card text-muted-foreground shadow-sm hover:text-foreground"
               }`}
             >
               {STATUS_LABEL[status]}
@@ -284,73 +284,73 @@ export default function AdminWaitlistClient() {
         </div>
 
         {fetchState.status === "loading" ? (
-          <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-[#d7d5eb] bg-white/70">
-            <div className="flex items-center gap-3 text-sm font-medium text-[#1F1E28]/70">
-              <Loader2 className="size-4 animate-spin text-[#1B0986]" />
+          <div className="flex h-48 items-center justify-center rounded-2xl border border-dashed border-border bg-card/50">
+            <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" />
               Loading waitlist…
             </div>
           </div>
         ) : null}
 
         {fetchState.status === "error" ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {fetchState.message}
           </div>
         ) : null}
 
         {fetchState.status === "ready" && fetchState.entries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#d7d5eb] bg-white px-6 py-16 text-center text-sm text-[#1F1E28]/70">
-            No requests yet. Once teams register via the landing page, they’ll appear here.
+          <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-16 text-center text-sm text-muted-foreground">
+            No requests yet. Once teams register via the landing page, they'll appear here.
           </div>
         ) : null}
 
         {fetchState.status === "ready" && fetchState.entries.length > 0 ? (
-          <div className="overflow-hidden rounded-3xl border border-[#d7d5eb] bg-white shadow-[0_32px_90px_-72px_rgba(15,11,56,0.35)]">
-            <table className="min-w-full divide-y divide-[#eceaf7]">
-              <thead className="bg-[#F7F6FF]">
+          <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-elevated">
+            <table className="min-w-full divide-y divide-border/50">
+              <thead className="bg-muted/30">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-[#6F6C90]">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Email
                   </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-[#6F6C90]">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Company & focus
                   </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-[#6F6C90]">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Submitted
                   </th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-[#6F6C90]">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Status
                   </th>
-                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-[0.2em] text-[#6F6C90]">
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                     Actions
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#eceaf7]">
+              <tbody className="divide-y divide-border/50">
                 {entries.map((entry) => {
                   const actionState = entryActions[entry.id] ?? { saving: false, error: null }
                   return (
-                    <tr key={entry.id} className="hover:bg-[#F8F6FF]">
-                      <td className="whitespace-nowrap px-5 py-4 text-sm font-medium text-[#08070B]">
+                    <tr key={entry.id} className="transition hover:bg-accent/5">
+                      <td className="whitespace-nowrap px-5 py-4 text-sm font-medium text-foreground">
                         {entry.email}
-                        <div className="mt-1 text-xs text-[#6F6C90]">
+                        <div className="mt-1 text-xs text-muted-foreground">
                           {entry.priority != null ? `Priority ${entry.priority}` : "Unprioritized"}
                         </div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-[#1F1E28]/80">
-                        {entry.company ? <div className="font-medium text-[#08070B]">{entry.company}</div> : null}
-                        <div className="text-xs text-[#6F6C90] whitespace-pre-wrap">
+                      <td className="px-5 py-4 text-sm text-muted-foreground">
+                        {entry.company ? <div className="font-medium text-foreground">{entry.company}</div> : null}
+                        <div className="text-xs text-muted-foreground whitespace-pre-wrap">
                           {entry.use_case ?? "—"}
                         </div>
                         {entry.notes ? (
-                          <div className="mt-2 rounded-lg border border-[#eceaf7] bg-[#f9f8ff] px-3 py-2 text-xs text-[#5b5879]">
+                          <div className="mt-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                             {entry.notes}
                           </div>
                         ) : null}
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-sm text-[#1F1E28]/70">
+                      <td className="whitespace-nowrap px-5 py-4 text-sm text-muted-foreground">
                         <div>{formatter.format(new Date(entry.created_at))}</div>
-                        <div className="text-xs text-[#6F6C90]">
+                        <div className="text-xs text-muted-foreground">
                           {entry.last_contacted_at ? `Contacted ${formatter.format(new Date(entry.last_contacted_at))}` : "No contact yet"}
                         </div>
                       </td>
@@ -362,7 +362,7 @@ export default function AdminWaitlistClient() {
                           {STATUS_LABEL[entry.status]}
                         </Badge>
                         {entry.activation_sent_at ? (
-                          <div className="mt-1 text-xs text-[#6F6C90]">
+                          <div className="mt-1 text-xs text-muted-foreground">
                             Activation sent {formatter.format(new Date(entry.activation_sent_at))}
                           </div>
                         ) : null}
@@ -371,7 +371,7 @@ export default function AdminWaitlistClient() {
                         <div className="flex flex-wrap justify-end gap-2">
                           <Button
                             size="sm"
-                            className="inline-flex items-center gap-2 rounded-full bg-[#08070B] px-3.5 text-xs font-semibold text-white hover:bg-[#111015]"
+                            className="inline-flex items-center gap-2 rounded-full bg-primary px-3.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90"
                             disabled={actionState.saving}
                             onClick={() => handleGrantAccess(entry)}
                           >
@@ -381,7 +381,7 @@ export default function AdminWaitlistClient() {
                           <Button
                             size="sm"
                             variant="outline"
-                            className="inline-flex items-center gap-2 rounded-full border border-[#1B0986]/60 px-3.5 text-xs font-semibold text-[#1B0986]"
+                            className="inline-flex items-center gap-2 rounded-full border border-primary/40 px-3.5 text-xs font-semibold text-primary"
                             disabled={actionState.saving}
                             onClick={() => handleMarkContacted(entry)}
                           >
@@ -391,7 +391,7 @@ export default function AdminWaitlistClient() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="inline-flex items-center gap-1 text-xs text-[#6F6C90]"
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
                             disabled={actionState.saving}
                             onClick={() => handleArchive(entry)}
                           >
@@ -401,7 +401,7 @@ export default function AdminWaitlistClient() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="inline-flex items-center gap-1 text-xs text-[#6F6C90]"
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
                             disabled={actionState.saving}
                             onClick={() => handleEditNotes(entry)}
                           >
@@ -411,7 +411,7 @@ export default function AdminWaitlistClient() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="inline-flex items-center gap-1 text-xs text-[#6F6C90]"
+                            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
                             disabled={actionState.saving}
                             onClick={() => handleEditPriority(entry)}
                           >
@@ -420,7 +420,7 @@ export default function AdminWaitlistClient() {
                           </Button>
                         </div>
                         {actionState.error ? (
-                          <div className="mt-2 text-xs text-red-600">{actionState.error}</div>
+                          <div className="mt-2 text-xs text-destructive">{actionState.error}</div>
                         ) : null}
                       </td>
                     </tr>

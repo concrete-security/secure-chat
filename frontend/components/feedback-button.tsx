@@ -146,7 +146,7 @@ export function FeedbackButton({ source, position = "bottom-right", label = "Con
         className={cn(
           isInline
             ? "h-10 w-full justify-center rounded-xl border border-border/50 bg-card/70 px-3 text-xs font-semibold text-foreground shadow-sm transition hover:bg-card/90"
-            : "rounded-full bg-[#08070B] text-sm font-semibold text-white shadow-lg shadow-[#08070B]/30 hover:bg-[#1B0986]",
+            : "rounded-full bg-foreground text-sm font-semibold text-background shadow-lg hover:bg-foreground/90",
           !isInline && (source === "confidential" ? "px-4 py-2 text-xs sm:px-5 sm:text-sm" : "px-5 py-2")
         )}
       >
@@ -154,12 +154,12 @@ export function FeedbackButton({ source, position = "bottom-right", label = "Con
         {label}
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-md border border-[#d4d3e6] bg-white/95 p-0 shadow-xl">
-          <DialogHeader className="space-y-2 border-b border-[#d4d3e6]/60 px-6 py-4">
-            <DialogTitle className="text-lg font-semibold text-[#08070B]">Contact</DialogTitle>
-            <DialogDescription className="text-sm text-[#1F1E28]/80">
+        <DialogContent className="max-w-md border border-border bg-background/95 backdrop-blur p-0 shadow-xl">
+          <DialogHeader className="space-y-2 border-b border-border/60 px-6 py-4">
+            <DialogTitle className="text-lg font-semibold text-foreground">Contact</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
               Share what&apos;s working, what&apos;s broken, or what you&apos;d like to see next. Prefer email:{" "}
-              <a className="font-medium text-[#1B0986] underline-offset-2 hover:underline" href="mailto:contact@concrete-security.com">
+              <a className="font-medium text-primary underline-offset-2 hover:underline" href="mailto:contact@concrete-security.com">
                 contact@concrete-security.com
               </a>
             </DialogDescription>
@@ -175,52 +175,52 @@ export function FeedbackButton({ source, position = "bottom-right", label = "Con
               className="absolute h-px w-px opacity-0"
               defaultValue=""
             />
-            <label className="text-sm font-medium text-[#1F1E28]">
+            <label className="text-sm font-medium text-foreground">
               Name (optional)
               <input
                 type="text"
                 value={form.name}
                 onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="mt-1 w-full rounded-xl border border-[#d4d3e6] bg-white px-3 py-2 text-sm text-[#08070B] placeholder:text-[#1F1E28]/50 focus:border-[#1B0986] focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-accent focus:outline-none"
                 placeholder="Pat from Concrete Security"
                 disabled={status === "loading" || status === "success"}
               />
             </label>
-            <label className="text-sm font-medium text-[#1F1E28]">
+            <label className="text-sm font-medium text-foreground">
               Email
               <input
                 type="email"
                 value={form.email}
                 onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                className="mt-1 w-full rounded-xl border border-[#d4d3e6] bg-white px-3 py-2 text-sm text-[#08070B] placeholder:text-[#1F1E28]/50 focus:border-[#1B0986] focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-accent focus:outline-none"
                 placeholder="you@company.com"
                 required
                 disabled={status === "loading" || status === "success"}
               />
             </label>
-            <label className="text-sm font-medium text-[#1F1E28]">
+            <label className="text-sm font-medium text-foreground">
               Message
               <textarea
                 value={form.message}
                 onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
-                className="mt-1 min-h-[120px] w-full rounded-2xl border border-[#d4d3e6] bg-white px-3 py-3 text-sm text-[#08070B] placeholder:text-[#1F1E28]/50 focus:border-[#1B0986] focus:outline-none"
+                className="mt-1 min-h-[120px] w-full rounded-2xl border border-border bg-background px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-accent focus:outline-none"
                 placeholder="What should we improve before the public launch?"
                 required
                 disabled={status === "loading" || status === "success"}
               />
             </label>
-            {error ? <p className="text-sm font-medium text-[#dc2626]">{error}</p> : null}
-            {formTokenError ? <p className="text-sm font-medium text-amber-600">{formTokenError}</p> : null}
+            {error ? <p className="text-sm font-medium text-destructive">{error}</p> : null}
+            {formTokenError ? <p className="text-sm font-medium text-warning">{formTokenError}</p> : null}
             {status === "success" ? (
-              <p className="rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-900">
+              <p className="rounded-2xl border border-success/40 bg-success/10 px-3 py-2 text-sm text-success">
                 Thanks for the signal. The team will review it shortly.
               </p>
             ) : null}
             <div className="flex items-center justify-between">
-              <p className="text-xs text-[#1F1E28]/60">We&apos;ll reply if we need more context.</p>
+              <p className="text-xs text-muted-foreground">We&apos;ll reply if we need more context.</p>
               <Button
                 type="submit"
-                className="rounded-full bg-[#1B0986] px-5 py-2 text-sm font-semibold text-white hover:bg-[#120463]"
+                className="rounded-full bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
                 disabled={status === "loading" || status === "success" || formTokenLoading || !formToken}
               >
                 {status === "loading" ? "Sending…" : status === "success" ? "Sent" : "Send message"}

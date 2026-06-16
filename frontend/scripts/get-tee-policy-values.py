@@ -20,9 +20,12 @@ import base64
 import hashlib
 import json
 import secrets
+import ssl
 import sys
 import urllib.request
 import urllib.error
+
+_ssl_context: ssl.SSLContext | None = None
 
 def fetch_quote(hostname: str) -> dict:
     """Fetch TDX quote from the TEE."""
@@ -39,7 +42,10 @@ def fetch_quote(hostname: str) -> dict:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        kwargs: dict = {"timeout": 30}
+        if _ssl_context is not None:
+            kwargs["context"] = _ssl_context
+        with urllib.request.urlopen(req, **kwargs) as response:
             return json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         error_body = e.read().decode('utf-8')
@@ -91,6 +97,29 @@ def parse_event_log(event_log_str: str) -> dict:
 
     return result
 
+def build_policy(measurements: dict, os_hash: str | None, app_compose_str: str) -> dict:
+    policy = {
+        "type": "dstack_tdx",
+        "expected_bootchain": {
+            "mrtd": measurements["mrtd"],
+            "rtmr0": measurements["rtmr0"],
+            "rtmr1": measurements["rtmr1"],
+            "rtmr2": measurements["rtmr2"]
+        },
+        "allowed_tcb_status": ["UpToDate", "SWHardeningNeeded"],
+        "accept_self_signed_certs": True
+    }
+
+    if os_hash:
+        policy["os_image_hash"] = os_hash
+
+    if app_compose_str:
+        # Store as raw JSON string to preserve key ordering for hash verification.
+        # PostgreSQL JSONB reorders object keys, which breaks compose hash matching.
+        policy["app_compose"] = app_compose_str
+
+    return policy
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Fetch TDX quote and extract policy values')
@@ -98,7 +127,17 @@ def main():
                         help='TEE hostname (default: vllm.concrete-security.com)')
     parser.add_argument('--allowed-envs', '-e', type=str, default='',
                         help='Comma-separated list of allowed environment variables for app_compose')
+    parser.add_argument('--format', choices=['full', 'policy-json'], default='full',
+                        help='Output format: full (human-readable report) or policy-json (JSON policy only)')
+    parser.add_argument('--no-verify-ssl', action='store_true',
+                        help='Skip TLS certificate verification (for self-signed certs on dstack CVMs)')
     args = parser.parse_args()
+
+    if args.no_verify_ssl:
+        global _ssl_context
+        _ssl_context = ssl.create_default_context()
+        _ssl_context.check_hostname = False
+        _ssl_context.verify_mode = ssl.CERT_NONE
 
     hostname = args.hostname
     allowed_envs = [e.strip() for e in args.allowed_envs.split(',') if e.strip()]
@@ -143,6 +182,13 @@ def main():
     if app_compose_str and tcb_compose_hash:
         computed_hash = hashlib.sha256(app_compose_str.encode()).hexdigest()
         app_compose_verified = (computed_hash == tcb_compose_hash)
+
+    os_hash = tcb_os_image_hash or event_data.get('os_image_hash')
+    policy = build_policy(measurements, os_hash, app_compose_str)
+
+    if args.format == "policy-json":
+        print(json.dumps(policy, indent=2))
+        return
 
     # Output
     print("=" * 60)
@@ -216,7 +262,6 @@ def main():
     print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0="{measurements["rtmr0"]}"')
     print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1="{measurements["rtmr1"]}"')
     print(f'NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2="{measurements["rtmr2"]}"')
-    os_hash = tcb_os_image_hash or event_data.get('os_image_hash')
     if os_hash:
         print(f'NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH="{os_hash}"')
     print()
@@ -259,27 +304,6 @@ def main():
     print("JSON Policy Object (for programmatic use):")
     print("=" * 60)
     print()
-
-    policy = {
-        "type": "dstack_tdx",
-        "expected_bootchain": {
-            "mrtd": measurements["mrtd"],
-            "rtmr0": measurements["rtmr0"],
-            "rtmr1": measurements["rtmr1"],
-            "rtmr2": measurements["rtmr2"]
-        },
-        "allowed_tcb_status": ["UpToDate", "SWHardeningNeeded"]
-    }
-
-    if os_hash:
-        policy["os_image_hash"] = os_hash
-
-    # Add app_compose from tcb_info (authoritative source)
-    if app_compose_str:
-        try:
-            policy["app_compose"] = json.loads(app_compose_str)
-        except json.JSONDecodeError:
-            pass
 
     print(json.dumps(policy, indent=2))
 

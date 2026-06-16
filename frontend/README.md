@@ -17,7 +17,11 @@ Umbra is Concrete Security's marketing site and secure workspace for routing sen
 - Provider settings are kept entirely in the browser (localStorage for base/model/label, sessionStorage for bearer tokens) and proxied through `/api/chat/completions` so secrets never touch the server code.
 - RA-TLS (Remote Attestation TLS) establishes a cryptographically verified connection to the TEE via WebSocket proxy. The WASM-based `ratls-wasm` library performs TLS handshake and attestation verification entirely in the browser.
 - The UI blocks prompts until RA-TLS connection is established and attestation verification succeeds, showing TEE type and TCB status.
-- Optional guest throttling (`NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS`) limits anonymous visitors to a single session before requiring Supabase auth.
+
+### Personal Agents workspace (`app/agents/page.tsx`)
+- Uses `/api/cvm/manifest` to fetch user-assigned CVM routing + attestation metadata from Supabase.
+- In `atlas_required` mode, attestation proxy URL and Atlas policy are read from per-CVM fields (`cvm_instances.atlas_proxy_url` and `cvm_instances.atlas_policy`), not from global env vars.
+- In production, missing/invalid per-CVM Atlas config fails closed and blocks transport initialization.
 
 ### Authentication & waitlist flows
 - `/sign-in` renders the Supabase email/password form plus a waitlist request form that hits the same `/api/waitlist` endpoint.
@@ -80,10 +84,41 @@ Fill in the variables below. Generate a strong `FORM_TOKEN_SECRET`, e.g. `openss
 5. Optional: tag beta users with `roles:["member"]` so they can sign in without consuming the guest session.
 
 ### 4. Run the app locally
+
+**HTTP (basic development):**
 ```bash
-pnpm dev --hostname 0.0.0.0 --port 3000
+pnpm dev
 ```
-Or use `make dev` / `make dev-open`. Visit `http://localhost:3000`.
+Visit `http://localhost:3000`. Passkeys and CVM owner flows will not work (no secure context).
+
+**HTTPS (passkeys & CVM features):**
+
+Passkeys (WebAuthn) require HTTPS on non-localhost domains. The domain `localhost.concrete-security.com` is also required for CVM server-side origin whitelisting.
+
+One-time setup:
+```bash
+# 1. Add DNS entry (requires sudo)
+echo '127.0.0.1 localhost.concrete-security.com' | sudo tee -a /etc/hosts
+
+# 2. Install mkcert and trust the local CA (requires sudo for trust)
+brew install mkcert
+mkcert -install
+
+# 3. Generate certificates
+mkdir -p certs
+cd certs
+mkcert localhost.concrete-security.com localhost 127.0.0.1
+cd ..
+
+# 4. Set the app URL in .env.local
+# NEXT_PUBLIC_APP_URL="https://localhost.concrete-security.com:3000"
+```
+
+Then start the HTTPS dev server:
+```bash
+pnpm dev:https
+```
+Visit `https://localhost.concrete-security.com:3000`.
 
 ### 5. Build for production
 ```bash
@@ -95,6 +130,7 @@ pnpm build && pnpm start
 
 | Command | Purpose |
 | --- | --- |
+| `pnpm dev:https` | HTTPS dev server on `localhost.concrete-security.com:3000` (passkeys & CVM). |
 | `pnpm lint` | Runs `next lint` with the repo-specific ESLint overrides. |
 | `pnpm test:unit` | Executes Vitest specs under `tests/unit` (coverage in `test-results/unit/coverage`). |
 | `pnpm test:e2e` | Runs the Playwright suite (`tests/e2e/secure-chat.spec.ts`) against `http://127.0.0.1:3000`. |
@@ -115,17 +151,30 @@ pnpm build && pnpm start
 ### Confidential provider defaults
 | Name | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_VLLM_BASE_URL` | Optional | Default provider base URL shown in the provider settings card. |
-| `NEXT_PUBLIC_VLLM_MODEL` | Optional | Default model identifier. |
-| `NEXT_PUBLIC_VLLM_PROVIDER_NAME` | Optional | Friendly provider name used in the UI badges. |
+| `NEXT_PUBLIC_PROVIDER_BASE_URL` | Optional | Default provider base URL shown in the provider settings card. |
+| `NEXT_PUBLIC_PROVIDER_MODEL` | Optional | Default model identifier. |
+| `NEXT_PUBLIC_PROVIDER_NAME` | Optional | Friendly provider name used in the UI badges. |
 | `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT` | Optional | Overrides `lib/system-prompt.ts` without editing the file. |
 | `NEXT_PUBLIC_DEFAULT_MAX_TOKENS` | Optional | Default `max_tokens` (defaults to 4098). |
 | `NEXT_PUBLIC_DEFAULT_TEMPERATURE` | Optional | Default `temperature` (defaults to 0.7). |
 
+### Private Agent defaults (server-side)
+| Name | Required | Description |
+| --- | --- | --- |
+| `PRIVATE_AGENT_DEFAULT_BASE_URL` | Optional | Default base URL for private-agent CVM routing/proxy in local/dev workflows. |
+| `PRIVATE_AGENT_BASE_DOMAIN` | Optional | Domain suffix used when provisioning per-user private-agent endpoints (default `cvm.local`). |
+| `PRIVATE_AGENT_PROXY_TLS_INSECURE` | Dev only | When set to `true`, allows self-signed TLS for localhost/127.0.0.1 private-agent proxy calls. |
+
+Per-CVM Atlas settings for `/agents` are stored in Supabase (`cvm_instances.atlas_proxy_url`, `cvm_instances.atlas_policy`) and delivered through the manifest API.
+
 ### RA-TLS & attestation
 | Name | Required | Description |
 | --- | --- | --- |
-| `NEXT_PUBLIC_RATLS_PROXY_URL` | Required for live attestation | WebSocket proxy URL for RA-TLS connections (e.g., `wss://proxy.example.com`). The proxy bridges WebSocket to TCP for the TEE. |
+| `NEXT_PUBLIC_ATLAS_PROXY_URL` | Required for live attestation | WebSocket proxy URL for RA-TLS connections (e.g., `wss://proxy.example.com`). The proxy bridges WebSocket to TCP for the TEE. |
+| `NEXT_PUBLIC_ATLAS_EXPECTED_MRTD/RTMR0/RTMR1/RTMR2` | Legacy (`/chat` + `/confidential-ai`) | Static expected boot measurements for env-based policy mode. `/agents` does not use these values. |
+| `NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH` | Legacy (`/chat` + `/confidential-ai`) | Static OS image hash for env-based policy mode. `/agents` does not use this value. |
+| `NEXT_PUBLIC_ATLAS_APP_COMPOSE` | Legacy (`/chat` + `/confidential-ai`) | Base64-encoded app compose JSON for env-based policy mode. `/agents` does not use this value. |
+| `NEXT_PUBLIC_ATLAS_ALLOWED_TCB_STATUS` | Legacy (`/chat` + `/confidential-ai`) | Optional comma-separated allowed TCB statuses in env-based policy mode. |
 | `NEXT_PUBLIC_ATTESTATION_TEST_MODE` | Optional | When `true`, skips real attestation verification (used by Playwright). |
 
 ### Email & feedback
@@ -134,11 +183,6 @@ pnpm build && pnpm start
 | `RESEND_API_KEY` | Required to send mail | Used by `lib/email/resend.ts`. Without it, emails are skipped (logged in dev). |
 | `RESEND_FROM_EMAIL` | Optional | Overrides the default `Concrete Security <onboarding@resend.dev>` sender. |
 | `RESEND_TO_EMAIL_FEEDBACK` | ✅ if `/api/feedback` is enabled | Destination inbox for feedback submissions. |
-
-### Runtime toggles
-| Name | Description |
-| --- | --- |
-| `NEXT_PUBLIC_CONFIDENTIAL_ENABLE_GUEST_LIMITS` | When `true`, anonymous visitors get a single confidential session before sign-in is required. |
 
 ## Supabase & authentication notes
 - Supabase clients (`lib/supabase/client.ts`, `server.ts`, `route-handler.ts`, `service-role.ts`) centralize initialization and fail early when envs are missing.
@@ -159,14 +203,14 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 
 1. **`lib/ratls-client.ts`** wraps the `ratls-wasm` WASM module with lazy loading and browser-only execution. Key exports:
    - `createRatlsClient(config, onAttestation)` - Creates a fetch-compatible function that performs RA-TLS handshake
-   - `getRatlsProxyUrl()` - Returns the configured proxy URL from `NEXT_PUBLIC_RATLS_PROXY_URL`
+   - `getRatlsProxyUrl()` - Returns the configured proxy URL from `NEXT_PUBLIC_ATLAS_PROXY_URL`
    - `deriveTargetHost(baseUrl)` - Extracts host:port from provider URL
    - `isRatlsConfigured()` - Checks if RA-TLS is enabled
    - `parseAppComposeServices(policy)` - Parses docker-compose.yml from policy to extract service images
    - `getImageUrl(image, digest?)` - Generates GHCR or Docker Hub links for container images
 
 2. **Connection flow:**
-   - Browser connects via WebSocket to the RA-TLS proxy (`NEXT_PUBLIC_RATLS_PROXY_URL`)
+   - Browser connects via WebSocket to the RA-TLS proxy (`NEXT_PUBLIC_ATLAS_PROXY_URL`)
    - Proxy bridges WebSocket to TCP, forwarding raw bytes to the TEE
    - WASM client performs TLS 1.3 handshake over the proxied connection
    - Client fetches TDX quote from TEE and verifies attestation using Intel DCAP
@@ -209,5 +253,34 @@ The RA-TLS (Remote Attestation TLS) flow provides cryptographically verified con
 - Update the Umbra persona in `lib/system-prompt.ts` or via `NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT`.
 - Waitlist statuses are defined in `lib/waitlist.ts` (`requested → contacted → invited → activated → archived`).
 - Tailwind tokens are centralized in `styles/globals.css`. Prefer the CSS variables over hard-coded colors when creating new components.
+
+### Per-CVM Atlas policy sync (`/agents`)
+Use `frontend/scripts/sync-cvm-atlas-policy.py` to derive policy from a live TEE quote and update the CVM assigned to one user.
+`user_cvm_assignments` is one-CVM-per-user, so targeting by `--user-id` is the simplest operator flow.
+
+```bash
+# Optional: preload frontend envs for one-off shell sessions
+set -a
+source .env.local
+set +a
+
+# Dry-run (default)
+python3 scripts/sync-cvm-atlas-policy.py \
+  --user-id <supabase-user-id>
+
+# Apply update
+python3 scripts/sync-cvm-atlas-policy.py \
+  --user-id <supabase-user-id> \
+  --apply
+```
+
+Defaults:
+- CVM row is resolved from `user_cvm_assignments.user_id -> cvm_instances.id`.
+- TEE hostname defaults from `cvm_instances.base_url`.
+- Atlas proxy URL defaults to existing `cvm_instances.atlas_proxy_url`, then `CVM_ATLAS_PROXY_URL` / `NEXT_PUBLIC_ATLAS_PROXY_URL` (loaded from `.env.local` by default).
+
+Required auth for the script:
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL` (or `NEXT_PUBLIC_SUPABASE_URL`)
 
 With the environment configured and Supabase ready, run `pnpm dev`, open `http://localhost:3000`, and walk through the entire Umbra flow. Before opening a PR, run `pnpm lint`, `pnpm test:unit`, and `pnpm test:e2e` (or `make test`) to keep the quality gates green.
