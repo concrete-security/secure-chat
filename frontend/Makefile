@@ -3,7 +3,9 @@
 PORT ?= 3000
 FORM_TOKEN_SECRET ?= local-form-token
 
-.PHONY: help install dev dev-open open open-when-ready build start lint clean test
+TEE_HOST ?= vllm.concrete-security.com
+
+.PHONY: help install dev dev-open open open-when-ready build start lint clean test update-tee-policy
 
 help:
 	@echo "Make targets:"
@@ -15,6 +17,7 @@ help:
 	@echo "  make start         # Start production server on PORT=$(PORT)"
 	@echo "  make lint          # Run linter"
 	@echo "  make test          # Run unit + Playwright tests (used in CI)"
+	@echo "  make update-tee-policy  # Fetch TEE policy and update .env.local (TEE_HOST=$(TEE_HOST))"
 	@echo "  make clean         # Remove .next build output"
 
 install:
@@ -60,6 +63,9 @@ test test-ci:
 		echo "Running Playwright E2E suite with npm..."; \
 		NEXT_PUBLIC_ATTESTATION_TEST_MODE=true FORM_TOKEN_SECRET=$(FORM_TOKEN_SECRET) npm run test:e2e; \
 	fi
+
+update-tee-policy:
+	python3 scripts/get-tee-policy-values.py $(TEE_HOST) --update-env .env.local
 
 clean:
 	rm -rf .next

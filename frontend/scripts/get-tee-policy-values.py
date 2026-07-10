@@ -24,6 +24,8 @@ import sys
 import urllib.request
 import urllib.error
 
+from dotenv import get_key, set_key
+
 def fetch_quote(hostname: str) -> dict:
     """Fetch TDX quote from the TEE."""
     url = f"https://{hostname}/tdx_quote"
@@ -91,6 +93,59 @@ def parse_event_log(event_log_str: str) -> dict:
 
     return result
 
+def ensure_env_file(env_path: str) -> None:
+    """Create the env file if it doesn't exist."""
+    try:
+        open(env_path, "x").close()
+    except FileExistsError:
+        pass
+
+
+def format_value_preview(key: str, value: str) -> str:
+    """Return a human-readable preview of a value (truncated for long b64)."""
+    if key == "NEXT_PUBLIC_ATLAS_APP_COMPOSE":
+        try:
+            decoded = json.loads(base64.b64decode(value).decode())
+            docker_compose = decoded.get("docker_compose_file", "")
+            lines = docker_compose.split('\n')[:6]
+            preview = '\n'.join(f'    {l}' for l in lines)
+            if len(docker_compose.split('\n')) > 6:
+                preview += '\n    ...'
+            return f"  (base64-encoded app_compose, docker-compose preview):\n{preview}"
+        except Exception:
+            return f"  {value[:80]}..."
+    return f"  {value}"
+
+
+def diff_compose_values(old_b64: str, new_b64: str) -> str:
+    """Show a meaningful diff between two base64-encoded app_compose values."""
+    try:
+        old = json.loads(base64.b64decode(old_b64).decode())
+        new = json.loads(base64.b64decode(new_b64).decode())
+    except Exception:
+        return "  (unable to decode for diff)"
+
+    changes = []
+    old_dc = old.get("docker_compose_file", "")
+    new_dc = new.get("docker_compose_file", "")
+    if old_dc != new_dc:
+        import difflib
+        diff = difflib.unified_diff(
+            old_dc.splitlines(), new_dc.splitlines(),
+            fromfile="current docker-compose", tofile="new docker-compose",
+            lineterm="",
+        )
+        changes.append('\n'.join(f'    {l}' for l in diff))
+
+    # Compare top-level keys other than docker_compose_file
+    for k in sorted(set(list(old.keys()) + list(new.keys()))):
+        if k == "docker_compose_file":
+            continue
+        if old.get(k) != new.get(k):
+            changes.append(f'    {k}: {old.get(k)!r} -> {new.get(k)!r}')
+
+    return '\n'.join(changes) if changes else "  (no meaningful difference)"
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='Fetch TDX quote and extract policy values')
@@ -98,6 +153,10 @@ def main():
                         help='TEE hostname (default: vllm.concrete-security.com)')
     parser.add_argument('--allowed-envs', '-e', type=str, default='',
                         help='Comma-separated list of allowed environment variables for app_compose')
+    parser.add_argument('--update-env', type=str, metavar='FILE',
+                        help='Update the given .env file in-place with the fetched policy values')
+    parser.add_argument('--yes', '-y', action='store_true',
+                        help='Skip confirmation prompts (accept all changes)')
     args = parser.parse_args()
 
     hostname = args.hostname
@@ -254,6 +313,60 @@ def main():
         except json.JSONDecodeError:
             pass
         print()
+
+    # Update .env file if requested
+    if args.update_env:
+        env_updates = {
+            "NEXT_PUBLIC_ATLAS_EXPECTED_MRTD": measurements["mrtd"],
+            "NEXT_PUBLIC_ATLAS_EXPECTED_RTMR0": measurements["rtmr0"],
+            "NEXT_PUBLIC_ATLAS_EXPECTED_RTMR1": measurements["rtmr1"],
+            "NEXT_PUBLIC_ATLAS_EXPECTED_RTMR2": measurements["rtmr2"],
+        }
+        if os_hash:
+            env_updates["NEXT_PUBLIC_ATLAS_EXPECTED_OS_HASH"] = os_hash
+        if app_compose_str:
+            app_compose_b64 = base64.b64encode(app_compose_str.encode()).decode()
+            env_updates["NEXT_PUBLIC_ATLAS_APP_COMPOSE"] = app_compose_b64
+
+        ensure_env_file(args.update_env)
+        applied = 0
+        skipped = 0
+        unchanged = 0
+
+        print()
+        for key, new_value in env_updates.items():
+            old_value = get_key(args.update_env, key)
+
+            if old_value == new_value:
+                unchanged += 1
+                continue
+
+            short_key = key.replace("NEXT_PUBLIC_ATLAS_EXPECTED_", "").replace("NEXT_PUBLIC_ATLAS_", "")
+            print(f"--- {short_key} ---")
+            if old_value is None:
+                print(f"  NEW (not currently set)")
+                print(f"  Value: {format_value_preview(key, new_value)}")
+            elif key == "NEXT_PUBLIC_ATLAS_APP_COMPOSE":
+                print(diff_compose_values(old_value, new_value))
+            else:
+                print(f"  old: {old_value}")
+                print(f"  new: {new_value}")
+
+            if args.yes:
+                answer = "y"
+            else:
+                answer = input(f"  Apply {short_key}? [Y/n] ").strip().lower()
+            if answer in ("", "y", "yes"):
+                set_key(args.update_env, key, new_value)
+                applied += 1
+                print(f"  -> applied")
+            else:
+                skipped += 1
+                print(f"  -> skipped")
+            print()
+
+        print(f"Done: {applied} updated, {skipped} skipped, {unchanged} unchanged.")
+        return
 
     print("=" * 60)
     print("JSON Policy Object (for programmatic use):")
